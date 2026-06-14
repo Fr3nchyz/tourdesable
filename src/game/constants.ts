@@ -34,6 +34,26 @@ export const MAX_SETTLE_MS = 7000;
 /** Gentle gravity: slopes influence the marble, damping prevents runaway. */
 export const GRAVITY = -7;
 
+// --- Surface displacement engine (material-driven sand feel) ---
+// surface.ts samples these each frame and pushes effective damping / lateral
+// force into the Rapier body. baseFriction ≈ the old MARBLE_LINEAR_DAMPING, so
+// behaviour is preserved when grain / trails / sink contribute nothing.
+import type { SurfaceMaterial } from "./types";
+
+/** Dry beach sand (Blancs-Sablons primary). */
+export const SAND_MATERIAL: SurfaceMaterial = {
+  baseFriction: 1.7,
+  grainResistance: 0.5,
+  deformationFactor: 0.5,
+};
+
+/** "Sink-to-stop": extra damping added as speed→0 (the settling "thud"). */
+export const SINK_GAIN = 2.6;
+/** Speed (m/s) e-fold of the sink ramp — smaller = thud closer to rest. */
+export const SINK_SCALE = 1.1;
+/** Half-width (m) of the cambered racing lane; |x| beyond this is shoulder. */
+export const LANE_HALF_WIDTH = 9;
+
 // --- Course (metres) ---
 export const COURSE_WIDTH = 44;
 export const COURSE_LENGTH = 92;

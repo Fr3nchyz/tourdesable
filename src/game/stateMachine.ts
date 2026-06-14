@@ -44,6 +44,7 @@ export function createInitialState(seed = Date.now() >>> 0): GameState {
     winnerId: null,
     seed,
     finishedCount: 0,
+    trails: [],
   };
 }
 
@@ -99,6 +100,7 @@ export function selectTrack(state: GameState, index: number): GameState {
     turnOrder: racers.map((r) => r.id),
     activeTurn: 0,
     round: 1,
+    trails: [],
   };
 }
 

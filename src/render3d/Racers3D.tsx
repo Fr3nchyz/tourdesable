@@ -15,6 +15,7 @@ import { RigidBody } from "@react-three/rapier";
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { Racer, Track, Vector2D } from "@/game/types";
 import { heightAt } from "@/game/track";
+import { surfaceAt } from "@/game/surface";
 import Cyclist from "./Cyclist";
 import {
   MARBLE_RADIUS,
@@ -86,6 +87,18 @@ function ActiveMarble({
     const pos = rb.translation();
     const vel = rb.linvel();
     const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+
+    // Surface displacement: material-driven damping + sink-to-stop. Sampled at
+    // the marble's ground position and pushed into the Rapier body each frame.
+    const sample = surfaceAt(
+      track,
+      { x: pos.x, y: pos.z },
+      { x: vel.x, y: vel.z },
+    );
+    rb.setLinearDamping(sample.damping);
+    if (sample.lateral.x !== 0 || sample.lateral.y !== 0) {
+      rb.applyImpulse({ x: sample.lateral.x, y: 0, z: sample.lateral.y }, true);
+    }
 
     const result = onRacerPos(racer.id, pos.x, pos.y, pos.z);
     if (result !== "ok") {

@@ -96,6 +96,33 @@ export interface Track {
   elevation: ElevationField;
 }
 
+// --- Surface displacement engine ---
+
+/**
+ * Material properties of a patch of ground. Pure data — consumed by surface.ts
+ * to derive the effective Rapier damping / friction / lateral force each frame.
+ * Kept framework-agnostic so the math ports cleanly to e.g. Godot.
+ */
+export interface SurfaceMaterial {
+  /** Rolling-resistance baseline → maps to Rapier linearDamping. */
+  baseFriction: number;
+  /** Amplitude of the Perlin grain variance applied on top of baseFriction. */
+  grainResistance: number;
+  /** How strongly a carved trail lowers resistance (0..1, fraction removed). */
+  deformationFactor: number;
+}
+
+/**
+ * A carved channel left by a marble — the "persistent layer". A later marble
+ * passing within TRAIL_WIDTH of the segment gets a temporary fast lane.
+ */
+export interface TrailSegment {
+  a: Vector2D;
+  b: Vector2D;
+  /** Turns remaining before the channel fills back in. */
+  turnsLeft: number;
+}
+
 // --- Input ---
 export interface Launch {
   dir: Vector2D; // unit (ground)
@@ -115,4 +142,6 @@ export interface GameState {
   winnerId: string | null;
   seed: number;
   finishedCount: number;
+  /** Carved channels from past shots (the persistent deformation layer). */
+  trails: TrailSegment[];
 }

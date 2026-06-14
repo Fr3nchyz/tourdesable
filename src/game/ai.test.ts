@@ -40,6 +40,7 @@ function makeState(racers: Racer[]): GameState {
     winnerId: null,
     seed: 1,
     finishedCount: 0,
+    trails: [],
   };
 }
 

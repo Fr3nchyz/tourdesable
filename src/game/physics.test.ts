@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { generateTrack, centerlineXAt } from "./track";
+import { generateTrack, loopPointAt, tangentAt } from "./track";
+import * as V from "./vector";
 import { zoneAt, frictionForZone } from "./friction";
 import { isStopped, integrate, rippleEffect, advanceVelocity } from "./physics";
 import {
@@ -15,23 +16,24 @@ const noWave: WaveState = { phase: "none", aftermathRoundsLeft: 0, zoneTopY: 0 }
 
 describe("friction zones", () => {
   const t = generateTrack(123);
-  const midY = t.height / 2;
-  const cx = centerlineXAt(t, midY);
+  const tt = 0.3;
+  const center = loopPointAt(t, tt);
+  const leftN = V.perp(tangentAt(t, tt));
 
   it("centerline is the racing lane (baseline friction)", () => {
-    expect(zoneAt(t, { x: cx, y: midY }, noWave)).toBe("lane");
+    expect(zoneAt(t, center, noWave)).toBe("lane");
     expect(frictionForZone("lane")).toBe(BASE_FRICTION);
   });
 
   it("just outside the lane is the dry shoulder (2x)", () => {
-    const p = { x: cx + t.laneHalfWidth + 5, y: midY };
+    const p = V.add(center, V.scale(leftN, t.laneHalfWidth + 5));
     expect(zoneAt(t, p, noWave)).toBe("shoulder");
     expect(frictionForZone("shoulder")).toBe(SHOULDER_FRICTION);
     expect(SHOULDER_FRICTION).toBe(BASE_FRICTION * 2);
   });
 
-  it("beyond the corridor is out", () => {
-    const p = { x: cx + t.corridorHalfWidth + 50, y: midY };
+  it("beyond the berm is out", () => {
+    const p = V.add(center, V.scale(leftN, t.trackHalfWidth + 50));
     expect(zoneAt(t, p, noWave)).toBe("out");
   });
 
@@ -41,7 +43,15 @@ describe("friction zones", () => {
       aftermathRoundsLeft: 2,
       zoneTopY: t.height * 0.6,
     };
-    const low = { x: centerlineXAt(t, t.height * 0.8), y: t.height * 0.8 };
+    // Find a centerline point in the lower (waterlogged) band.
+    let low = center;
+    for (let s = 0; s < 1; s += 0.02) {
+      const p = loopPointAt(t, s);
+      if (p.y >= t.height * 0.65) {
+        low = p;
+        break;
+      }
+    }
     expect(zoneAt(t, low, wave)).toBe("waterlogged");
   });
 });
@@ -58,9 +68,8 @@ describe("sand drag", () => {
 
   it("velocity decays toward zero in the lane and eventually stops", () => {
     const t = generateTrack(50);
-    const midY = t.height / 2;
-    let pos = { x: centerlineXAt(t, midY), y: midY };
-    let vel = { x: 0, y: -10 }; // straight up the lane
+    let pos = loopPointAt(t, 0.0);
+    let vel = { x: 0, y: -6 }; // a gentle nudge
     let frames = 0;
     while (vel.x !== 0 || vel.y !== 0) {
       const r = advanceVelocity(t, pos, vel, noWave);

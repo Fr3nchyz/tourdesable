@@ -5,7 +5,7 @@
 // loop). The render/audio layers consume the FrameEvents it returns.
 // ============================================================================
 
-import type { GameState, Racer, Launch, Vector2D } from "./types";
+import type { GameState, Racer, Launch, Vector2D, Track } from "./types";
 import * as V from "./vector";
 import { advanceVelocity, integrate, isStopped } from "./physics";
 import {
@@ -13,15 +13,17 @@ import {
   resolveShunt,
   circlesOverlap,
 } from "./collision";
-import {
-  progressFor,
-  isOutOfBounds,
-  hasCrossedFinish,
-} from "./track";
+import { nearestOnLoop, isOffBoard } from "./track";
 import { computeLaunch } from "./ai";
 import { mulberry32 } from "./rng";
 import { activeRacer, startNextTurn } from "./stateMachine";
-import { MAX_LAUNCH_SPEED, STOP_THRESHOLD } from "./constants";
+import {
+  MAX_LAUNCH_SPEED,
+  STOP_THRESHOLD,
+  BERM_CLEAR_SPEED,
+  BERM_DAMPING,
+  LAPS_TO_WIN,
+} from "./constants";
 
 export interface FrameEvents {
   /** Marble-vs-marble shunts: contact point + whether it was high-powered. */
@@ -113,7 +115,9 @@ function stepRacer(state: GameState, r: Racer, ev: FrameEvents): void {
       other.pos = V.add(shunt.attacker.pos, V.scale(normal, r.radius + other.radius));
       other.state = "moving";
       ev.collisions.push({ point: shunt.contact, hard: incoming >= HARD_HIT_SPEED });
-      r.progress = progressFor(track, r.pos);
+      const ap = nearestOnLoop(track, r.pos);
+      r.loopT = ap.t;
+      r.progress = r.lap + ap.t;
       return; // attacker is done this frame
     } else {
       // Two movers: exchange velocity components along the contact normal.
@@ -133,32 +137,85 @@ function stepRacer(state: GameState, r: Racer, ev: FrameEvents): void {
   r.vel = adv.vel;
   r.pos = pos;
 
-  // --- Finish ---
-  if (hasCrossedFinish(track, r.pos)) {
-    r.state = "finished";
-    r.vel = { x: 0, y: 0 };
-    r.finishedRank = state.finishedCount++;
-    if (!state.winnerId) state.winnerId = r.id;
-    ev.finished.push(r.id);
+  // --- Low banked berm (speed-gated) ---
+  const proj = nearestOnLoop(track, r.pos);
+  if (Math.abs(proj.lateral) > track.trackHalfWidth) {
+    if (V.len(r.vel) >= BERM_CLEAR_SPEED) {
+      tipRacer(r, ev); // a hard flick clears the low berm -> out of bounds
+      return;
+    }
+    // Gentle: the bank deflects the marble back into the channel.
+    const leftNormal = V.perp(proj.tangent);
+    const side = proj.lateral > 0 ? 1 : -1;
+    const inwardNormal = V.scale(leftNormal, -side); // toward the centerline
+    r.vel = V.scale(V.reflect(r.vel, inwardNormal), BERM_DAMPING);
+    r.pos = V.add(
+      proj.point,
+      V.scale(leftNormal, side * (track.trackHalfWidth - r.radius)),
+    );
+    ev.bounces.push({ point: r.pos });
+  }
+
+  // --- Off-board safety (rare) ---
+  if (isOffBoard(track, r.pos)) {
+    tipRacer(r, ev);
     return;
   }
 
-  // --- Out of bounds (tipped, mini-golf reset) ---
-  if (isOutOfBounds(track, r.pos)) {
-    r.state = "tipped";
-    r.skipNextTurn = true;
-    r.vel = { x: 0, y: 0 };
-    // Respawn adjacent to where it left: snap back to the last in-bounds point.
-    r.pos = { ...r.lastInBoundsPos };
-    ev.tipped.push(r.id);
-    return;
-  }
+  // --- Lap counting + finish ---
+  if (updateLapAndFinish(state, r, ev, track)) return;
 
-  // In-bounds: remember this spot + progress.
+  // In-bounds bookkeeping.
   r.lastInBoundsPos = { ...r.pos };
-  r.progress = progressFor(track, r.pos);
-
   if (isStopped(r.vel) && r.state === "moving") r.state = "stopped";
+}
+
+/** Tip a marble out: park it at its respawn anchor, miss the next turn. */
+function tipRacer(r: Racer, ev: FrameEvents): void {
+  r.state = "tipped";
+  r.skipNextTurn = true;
+  r.vel = { x: 0, y: 0 };
+  r.pos = { ...r.lastInBoundsPos };
+  ev.tipped.push(r.id);
+}
+
+/**
+ * Update lap parameter, detect forward/backward finish crossings, and finish the
+ * race on the winning lap. Returns true if the racer finished this frame.
+ */
+function updateLapAndFinish(
+  state: GameState,
+  r: Racer,
+  ev: FrameEvents,
+  track: Track,
+): boolean {
+  const t = nearestOnLoop(track, r.pos).t;
+  const prev = r.loopT;
+
+  if (t > 0.4 && t < 0.6) r.passedHalf = true;
+
+  // Forward wrap (high -> low) after passing halfway = completed a lap.
+  if (prev > 0.7 && t < 0.3 && r.passedHalf) {
+    r.lap += 1;
+    r.passedHalf = false;
+    if (r.lap >= LAPS_TO_WIN) {
+      r.state = "finished";
+      r.vel = { x: 0, y: 0 };
+      r.finishedRank = state.finishedCount++;
+      if (!state.winnerId) state.winnerId = r.id;
+      ev.finished.push(r.id);
+      r.loopT = t;
+      r.progress = r.lap + t;
+      return true;
+    }
+  } else if (prev < 0.3 && t > 0.7) {
+    // Backward wrap — undo a lap (never below zero).
+    r.lap = Math.max(0, r.lap - 1);
+  }
+
+  r.loopT = t;
+  r.progress = r.lap + t;
+  return false;
 }
 
 /**

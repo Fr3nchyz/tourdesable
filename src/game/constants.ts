@@ -4,8 +4,19 @@
 // ============================================================================
 
 // --- Board ---
-export const BOARD_WIDTH = 900;
-export const BOARD_HEIGHT = 1400;
+// Squarer board so the dug circuit (closed loop) reads well.
+export const BOARD_WIDTH = 1200;
+export const BOARD_HEIGHT = 1200;
+
+// --- Circuit / laps ---
+/** Laps to win the race. */
+export const LAPS_TO_WIN = 1;
+/** Half-width of the full drivable channel (centerline -> berm foot). */
+export const TRACK_HALF_WIDTH = 92;
+/** Velocity retained after a marble is deflected by a low berm bank. */
+export const BERM_DAMPING = 0.6;
+/** Speed at/above which a marble clears (flies over) the low berm -> tipped. */
+export const BERM_CLEAR_SPEED = 9;
 
 // --- Marble ---
 export const MARBLE_RADIUS = 16;

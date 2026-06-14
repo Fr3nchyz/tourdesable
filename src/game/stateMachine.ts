@@ -4,7 +4,7 @@
 // ============================================================================
 
 import type { GameState, Racer, Track, BotType } from "./types";
-import { generateTrack } from "./track";
+import { generateTrack, nearestOnLoop } from "./track";
 import { mulberry32, randInt, shuffle, type Rng } from "./rng";
 import { rollWave, applyWaveImpact, makeAftermathObstacles, beginAftermath, advanceAftermath } from "./wave";
 import { MARBLE_RADIUS, MARBLE_MASS, RACER_COLORS, RACER_COUNT } from "./constants";
@@ -67,17 +67,18 @@ function spawnRacers(track: Track, rng: Rng): Racer[] {
   const racers: Racer[] = [];
 
   // Human in the first grid slot.
-  racers.push(makeRacer("p0", "You", true, undefined, track.startGrid[0], RACER_COLORS[0]));
+  racers.push(makeRacer(track, "p0", "You", true, undefined, track.startGrid[0], RACER_COLORS[0]));
 
   bots.forEach((bt, i) => {
     racers.push(
-      makeRacer(`b${i}`, BOT_NAMES[bt], false, bt, track.startGrid[i + 1], RACER_COLORS[i + 1]),
+      makeRacer(track, `b${i}`, BOT_NAMES[bt], false, bt, track.startGrid[i + 1], RACER_COLORS[i + 1]),
     );
   });
   return racers;
 }
 
 function makeRacer(
+  track: Track,
   id: string,
   name: string,
   isHuman: boolean,
@@ -85,6 +86,7 @@ function makeRacer(
   pos: { x: number; y: number },
   color: string,
 ): Racer {
+  const loopT = nearestOnLoop(track, pos).t;
   return {
     id,
     name,
@@ -98,7 +100,10 @@ function makeRacer(
     state: "idle",
     skipNextTurn: false,
     lastInBoundsPos: { ...pos },
-    progress: 0,
+    progress: loopT,
+    lap: 0,
+    loopT,
+    passedHalf: false,
   };
 }
 

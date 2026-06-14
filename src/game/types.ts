@@ -56,8 +56,14 @@ export interface Racer {
   skipNextTurn: boolean;
   /** Last position recorded while in-bounds — respawn anchor after tipping. */
   lastInBoundsPos: Vector2D;
-  /** Cached progress toward finish (higher = closer). */
+  /** Cached progress for standings ordering = lap + loopT. */
   progress: number;
+  /** Completed laps. */
+  lap: number;
+  /** Current parameter position along the loop, t in [0,1). */
+  loopT: number;
+  /** True once the racer has passed the half-way point this lap (anti-cheese). */
+  passedHalf: boolean;
   /** Set when crossing finish; lower = earlier. */
   finishedRank?: number;
 }
@@ -99,25 +105,29 @@ export interface RippleField {
 }
 
 /**
- * Linear A->B corridor. Start grid sits near the bottom (high y), finish line
- * near the top (low y). Racing goes "up" (decreasing y). The centerline is a
- * series of waypoints so the corridor can gently wander while staying linear
- * (no loop). Lane / shoulder / out-of-bounds are bands measured from the
- * centerline at the marble's y.
+ * Dug circuit: a closed loop (ring) carved into the sand. Racers flick their
+ * marbles around the channel between the inner and outer LOW berm banks. The
+ * centerline `loop` is a closed polyline (loop[last] connects back to loop[0]);
+ * `cumLen[i]` is the arc length up to vertex i, `loopLength` the total. Lane /
+ * shoulder bands and the berm are measured by lateral offset from the loop.
+ * The finish line sits at loop param t = 0 (loop[0]); racing goes in the
+ * direction of increasing vertex index (increasing t).
  */
 export interface Track {
   seed: number;
   width: number;
   height: number;
-  /** Waypoints from start (bottom) to finish (top). */
-  centerline: Vector2D[];
+  /** Closed centerline ring (not repeated: loop[n-1] -> loop[0] closes it). */
+  loop: Vector2D[];
+  /** Cumulative arc length to each vertex; cumLen[0] = 0. */
+  cumLen: number[];
+  /** Total loop arc length. */
+  loopLength: number;
   /** Half-width of the optimal racing lane around the centerline. */
   laneHalfWidth: number;
-  /** Half-width of the full corridor; beyond this is out-of-bounds. */
-  corridorHalfWidth: number;
-  /** y coordinate of the finish line. */
-  finishY: number;
-  /** Spawn points for up to 4 racers. */
+  /** Half-width of the full drivable channel; beyond = low berm bank. */
+  trackHalfWidth: number;
+  /** Spawn points for up to 4 racers (just past the finish line). */
   startGrid: Vector2D[];
   obstacles: Obstacle[];
   ripple: RippleField;

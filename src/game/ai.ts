@@ -6,7 +6,7 @@
 
 import type { Racer, Track, GameState, Launch, Vector2D, BotType } from "./types";
 import * as V from "./vector";
-import { centerlineXAt } from "./track";
+import { loopPointAt } from "./track";
 import type { Rng } from "./rng";
 import { randRange } from "./rng";
 
@@ -16,10 +16,10 @@ const BULLY_RANGE = 300; // bully target scan radius
 
 // --- shared helpers --------------------------------------------------------
 
-/** A point on the centerline a fixed distance up-track from the marble. */
+/** A point on the loop centerline a fixed arc-distance ahead of the marble. */
 function aheadPoint(track: Track, self: Racer, lookahead = LOOKAHEAD): Vector2D {
-  const targetY = Math.max(track.finishY, self.pos.y - lookahead);
-  return { x: centerlineXAt(track, targetY), y: targetY };
+  const dt = track.loopLength > 0 ? lookahead / track.loopLength : 0;
+  return loopPointAt(track, self.loopT + dt);
 }
 
 const dirTo = (from: Vector2D, to: Vector2D): Vector2D =>
@@ -133,18 +133,14 @@ function sniper(self: Racer, state: GameState): Launch {
 /** Beach-comber: erratic power (0.4-1.0) and +/-15deg aim wobble. */
 function beachcomber(self: Racer, state: GameState, rng: Rng): Launch {
   const track = state.track!;
-  let target = aheadPoint(track, self);
-  // Chaotically chase the waterlogged hydroplane zone when one exists.
-  if (
-    (state.wave.phase === "impact" || state.wave.phase === "aftermath") &&
-    rng() < 0.5
-  ) {
-    const zy = Math.min(track.height - 20, state.wave.zoneTopY + 80);
-    target = { x: centerlineXAt(track, zy), y: zy };
-  }
+  const target = aheadPoint(track, self);
   const baseAngle = V.angle(V.sub(target, self.pos));
-  const jitter = randRange(rng, -15, 15) * (Math.PI / 180);
-  const power = randRange(rng, 0.4, 1.0);
+  // Wilder aim + power when the waterlogged hydroplane zone is active (chaos).
+  const waterlogged =
+    state.wave.phase === "impact" || state.wave.phase === "aftermath";
+  const jitterDeg = waterlogged ? 25 : 15;
+  const jitter = randRange(rng, -jitterDeg, jitterDeg) * (Math.PI / 180);
+  const power = randRange(rng, waterlogged ? 0.6 : 0.4, 1.0);
   return { dir: V.fromAngle(baseAngle + jitter), power };
 }
 

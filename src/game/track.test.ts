@@ -1,77 +1,93 @@
 import { describe, it, expect } from "vitest";
 import {
   generateTrack,
-  centerlineXAt,
+  nearestOnLoop,
+  loopPointAt,
+  tangentAt,
   offsetFromCenter,
   progressFor,
-  isOutOfBounds,
-  hasCrossedFinish,
+  isPastBerm,
+  isOffBoard,
 } from "./track";
+import * as V from "./vector";
 import { RACER_COUNT } from "./constants";
 
-describe("track generation", () => {
+describe("circuit generation", () => {
   it("is deterministic for a seed", () => {
     expect(generateTrack(777)).toEqual(generateTrack(777));
   });
 
-  it("different seeds produce different tracks", () => {
-    const a = generateTrack(1);
-    const b = generateTrack(2);
-    expect(a.centerline).not.toEqual(b.centerline);
+  it("different seeds produce different loops", () => {
+    expect(generateTrack(1).loop).not.toEqual(generateTrack(2).loop);
   });
 
-  it("centerline runs start(bottom) -> finish(top) with finish near top", () => {
+  it("builds a closed loop with monotonic arc lengths", () => {
     const t = generateTrack(33);
-    const first = t.centerline[0];
-    const last = t.centerline[t.centerline.length - 1];
-    expect(first.y).toBeGreaterThan(last.y); // bottom has larger y
-    expect(last.y).toBe(t.finishY);
+    expect(t.loop.length).toBeGreaterThan(16);
+    expect(t.cumLen).toHaveLength(t.loop.length + 1);
+    expect(t.cumLen[0]).toBe(0);
+    for (let i = 1; i < t.cumLen.length; i++) {
+      expect(t.cumLen[i]).toBeGreaterThan(t.cumLen[i - 1]);
+    }
+    expect(t.loopLength).toBeCloseTo(t.cumLen[t.cumLen.length - 1], 6);
   });
 
-  it("corridor stays within the board horizontally", () => {
+  it("keeps the channel inside the board", () => {
     const t = generateTrack(8);
-    for (const wp of t.centerline) {
-      expect(wp.x - t.corridorHalfWidth).toBeGreaterThanOrEqual(0);
-      expect(wp.x + t.corridorHalfWidth).toBeLessThanOrEqual(t.width);
+    for (const p of t.loop) {
+      expect(p.x - t.trackHalfWidth).toBeGreaterThanOrEqual(0);
+      expect(p.y - t.trackHalfWidth).toBeGreaterThanOrEqual(0);
+      expect(p.x + t.trackHalfWidth).toBeLessThanOrEqual(t.width);
+      expect(p.y + t.trackHalfWidth).toBeLessThanOrEqual(t.height);
     }
   });
 
   it("spawns one start position per racer", () => {
-    const t = generateTrack(5);
-    expect(t.startGrid).toHaveLength(RACER_COUNT);
+    expect(generateTrack(5).startGrid).toHaveLength(RACER_COUNT);
+  });
+});
+
+describe("loop geometry", () => {
+  const t = generateTrack(123);
+
+  it("nearestOnLoop puts a centerline point at ~0 lateral", () => {
+    const v = t.loop[10];
+    const proj = nearestOnLoop(t, v);
+    expect(Math.abs(proj.lateral)).toBeLessThan(1e-6);
+    expect(proj.t).toBeGreaterThanOrEqual(0);
+    expect(proj.t).toBeLessThan(1);
   });
 
-  it("centerlineXAt clamps beyond the ends", () => {
-    const t = generateTrack(11);
-    expect(centerlineXAt(t, t.height + 500)).toBe(t.centerline[0].x);
-    expect(centerlineXAt(t, -500)).toBe(t.centerline[t.centerline.length - 1].x);
+  it("loopPointAt(0) is the start vertex and wraps at 1", () => {
+    expect(loopPointAt(t, 0)).toEqual(t.loop[0]);
+    expect(loopPointAt(t, 1)).toEqual(loopPointAt(t, 0));
+  });
+
+  it("tangentAt returns a unit vector", () => {
+    expect(V.len(tangentAt(t, 0.3))).toBeCloseTo(1, 6);
   });
 
   it("offsetFromCenter is ~0 on the centerline", () => {
-    const t = generateTrack(4);
-    const y = t.height / 2;
-    const onLine = { x: centerlineXAt(t, y), y };
-    expect(offsetFromCenter(t, onLine)).toBeCloseTo(0, 6);
+    expect(offsetFromCenter(t, t.loop[20])).toBeLessThan(1e-6);
   });
 
-  it("progress increases toward the finish", () => {
-    const t = generateTrack(9);
-    const low = progressFor(t, { x: 0, y: t.centerline[0].y }); // start
-    const high = progressFor(t, { x: 0, y: t.finishY }); // finish
-    expect(high).toBeGreaterThan(low);
+  it("progress (loop param) advances as you move forward along the loop", () => {
+    const early = loopPointAt(t, 0.2);
+    const later = loopPointAt(t, 0.5);
+    expect(progressFor(t, later)).toBeGreaterThan(progressFor(t, early));
   });
 
-  it("detects out-of-bounds past the corridor wall", () => {
-    const t = generateTrack(2);
-    const y = t.height / 2;
-    const cx = centerlineXAt(t, y);
-    expect(isOutOfBounds(t, { x: cx, y })).toBe(false);
-    expect(isOutOfBounds(t, { x: cx + t.corridorHalfWidth + 5, y })).toBe(true);
+  it("detects a marble pushed past the berm", () => {
+    const center = loopPointAt(t, 0.4);
+    const leftN = V.perp(tangentAt(t, 0.4));
+    const inside = V.add(center, V.scale(leftN, t.laneHalfWidth * 0.5));
+    const beyond = V.add(center, V.scale(leftN, t.trackHalfWidth + 12));
+    expect(isPastBerm(t, inside)).toBe(false);
+    expect(isPastBerm(t, beyond)).toBe(true);
   });
 
-  it("detects finish crossing", () => {
-    const t = generateTrack(6);
-    expect(hasCrossedFinish(t, { x: 100, y: t.finishY - 1 })).toBe(true);
-    expect(hasCrossedFinish(t, { x: 100, y: t.finishY + 50 })).toBe(false);
+  it("detects leaving the board", () => {
+    expect(isOffBoard(t, { x: -5, y: 100 })).toBe(true);
+    expect(isOffBoard(t, loopPointAt(t, 0.1))).toBe(false);
   });
 });

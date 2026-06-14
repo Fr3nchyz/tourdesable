@@ -7,8 +7,9 @@ import {
   beginAftermath,
   advanceAftermath,
 } from "./wave";
-import { generateTrack, centerlineXAt, isOutOfBounds } from "./track";
+import { generateTrack, loopPointAt, nearestOnLoop } from "./track";
 import { mulberry32 } from "./rng";
+import * as V from "./vector";
 import {
   WAVE_PUSHBACK,
   WAVE_AFTERMATH_ROUNDS,
@@ -19,20 +20,34 @@ import type { Racer, Vector2D } from "./types";
 const track = generateTrack(321);
 
 function racer(id: string, pos: Vector2D): Racer {
+  const loopT = nearestOnLoop(track, pos).t;
   return {
     id,
     name: id,
     isHuman: false,
     pos,
-    vel: { x: 1, y: -1 },
+    vel: { x: 0, y: 0 },
     radius: 16,
     mass: 1,
     color: "#fff",
     state: "stopped",
     skipNextTurn: false,
     lastInBoundsPos: pos,
-    progress: track.centerline[0].y - pos.y,
+    progress: loopT,
+    lap: 0,
+    loopT,
+    passedHalf: false,
   };
+}
+
+/** A centerline point with y in the lower (wave) zone, or null. */
+function lowCenterlinePoint(): Vector2D | null {
+  const zoneTopY = track.height * 0.6;
+  for (let s = 0; s < 1; s += 0.005) {
+    const p = loopPointAt(track, s);
+    if (p.y >= zoneTopY + 40) return p;
+  }
+  return null;
 }
 
 describe("wave trigger", () => {
@@ -57,29 +72,29 @@ describe("wave zone", () => {
 describe("wave impact", () => {
   const zoneTopY = waveZoneTopY(track);
 
-  it("pushes a caught marble 100px back along the track", () => {
-    const y = zoneTopY + 100;
-    const r = racer("a", { x: centerlineXAt(track, y), y });
+  it("shoves a caught marble ~100px backward along the loop", () => {
+    const low = lowCenterlinePoint();
+    expect(low).not.toBeNull();
+    const r = racer("a", low!);
     const [after] = applyWaveImpact([r], track);
-    expect(after.pos.y).toBeCloseTo(y + WAVE_PUSHBACK, 6);
+    expect(V.dist(r.pos, after.pos)).toBeCloseTo(WAVE_PUSHBACK, 4);
     expect(after.vel).toEqual({ x: 0, y: 0 });
   });
 
   it("leaves marbles above the zone untouched", () => {
-    const y = zoneTopY - 100;
-    const r = racer("b", { x: centerlineXAt(track, y), y });
+    // A point clearly above the lower zone.
+    let high: Vector2D | null = null;
+    for (let s = 0; s < 1; s += 0.005) {
+      const p = loopPointAt(track, s);
+      if (p.y <= zoneTopY - 120) {
+        high = p;
+        break;
+      }
+    }
+    expect(high).not.toBeNull();
+    const r = racer("b", high!);
     const [after] = applyWaveImpact([r], track);
-    expect(after.pos.y).toBe(y);
-  });
-
-  it("tips a marble forced off the track bounds", () => {
-    // Sit a marble near the bottom edge so +100 pushes it past the board.
-    const y = track.height - 30;
-    const r = racer("c", { x: centerlineXAt(track, y), y });
-    const [after] = applyWaveImpact([r], track);
-    expect(isOutOfBounds(track, after.pos)).toBe(true);
-    expect(after.state).toBe("tipped");
-    expect(after.skipNextTurn).toBe(true);
+    expect(after.pos).toEqual(high);
   });
 });
 

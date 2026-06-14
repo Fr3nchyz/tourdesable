@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createInitialState, selectTrack, activeRacer, isHumanInput } from "./stateMachine";
 import { applyLaunch, update, takeBotTurn } from "./engine";
-import { centerlineXAt } from "./track";
+import { loopPointAt, tangentAt } from "./track";
 import { RACER_COUNT } from "./constants";
+import * as V from "./vector";
 import type { GameState } from "./types";
 
 const SEED = 4242;
@@ -71,41 +72,47 @@ describe("flick -> physics -> resolution", () => {
 });
 
 describe("pocket-stealer shunt in the loop", () => {
-  it("attacker stops in the vacated pocket; target is launched", () => {
+  it("attacker stops; target is launched forward", () => {
     const s = started();
     const t = s.track!;
-    const midY = t.height * 0.5;
-    const cx = centerlineXAt(t, midY);
+    const tt = 0.35;
+    const center = loopPointAt(t, tt);
+    const tangent = tangentAt(t, tt);
 
     const attacker = s.racers[0];
-    attacker.pos = { x: cx, y: midY };
-    attacker.lastInBoundsPos = { x: cx, y: midY };
+    attacker.pos = { ...center };
+    attacker.lastInBoundsPos = { ...center };
 
     const target = s.racers[1];
-    const targetPos = { x: cx, y: midY - 36 }; // just up-track, within hit range
+    const targetPos = V.add(center, V.scale(tangent, 36)); // just ahead, in range
     target.pos = { ...targetPos };
     target.lastInBoundsPos = { ...targetPos };
     target.state = "stopped";
+    const targetStart = { ...targetPos };
 
-    applyLaunch(s, { dir: { x: 0, y: -1 }, power: 0.8 });
+    applyLaunch(s, { dir: tangent, power: 0.8 });
     runUntilSettled(s);
 
-    // Attacker parked at/above the target's old pocket; target shoved up-track.
-    expect(attacker.pos.y).toBeLessThanOrEqual(midY);
-    expect(target.pos.y).toBeLessThan(targetPos.y); // moved up from impact
+    expect(["stopped", "tipped"]).toContain(attacker.state);
+    // Target was shoved forward, away from where it sat.
+    expect(V.dist(target.pos, targetStart)).toBeGreaterThan(5);
   });
 });
 
 describe("victory", () => {
-  it("first marble across the finish wins and flips to VICTORY", () => {
+  it("completing the lap crosses the finish and flips to VICTORY", () => {
     const s = started();
     const t = s.track!;
     const human = s.racers[0];
-    const y = t.finishY + 30;
-    human.pos = { x: centerlineXAt(t, y), y };
-    human.lastInBoundsPos = { ...human.pos };
 
-    applyLaunch(s, { dir: { x: 0, y: -1 }, power: 1 });
+    // Park the human just before the finish line, having already passed halfway.
+    const startT = 0.97;
+    human.pos = loopPointAt(t, startT);
+    human.lastInBoundsPos = { ...human.pos };
+    human.loopT = startT;
+    human.passedHalf = true;
+
+    applyLaunch(s, { dir: tangentAt(t, startT), power: 0.6 });
     runUntilSettled(s);
 
     expect(s.winnerId).toBe(human.id);

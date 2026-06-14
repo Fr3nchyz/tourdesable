@@ -1,19 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { computeLaunch, placement } from "./ai";
-import { generateTrack, centerlineXAt } from "./track";
+import { generateTrack, loopPointAt, tangentAt, nearestOnLoop } from "./track";
 import { mulberry32 } from "./rng";
 import type { Racer, GameState, BotType, WaveState, Vector2D } from "./types";
 import * as V from "./vector";
 
 const track = generateTrack(2024);
-const midY = track.height * 0.6;
-const cx = centerlineXAt(track, midY);
 
-function racer(
-  id: string,
-  pos: Vector2D,
-  opts: Partial<Racer> = {},
-): Racer {
+/** Centerline point at loop param t. */
+const P = (t: number) => loopPointAt(track, t);
+
+function racer(id: string, pos: Vector2D, opts: Partial<Racer> = {}): Racer {
+  const loopT = nearestOnLoop(track, pos).t;
+  const lap = opts.lap ?? 0;
   return {
     id,
     name: id,
@@ -27,7 +26,10 @@ function racer(
     state: "idle",
     skipNextTurn: false,
     lastInBoundsPos: pos,
-    progress: track.centerline[0].y - pos.y,
+    progress: lap + loopT,
+    lap,
+    loopT,
+    passedHalf: false,
     ...opts,
   };
 }
@@ -51,10 +53,14 @@ function state(racers: Racer[], wavePhase: WaveState["phase"] = "none"): GameSta
 
 const rng = () => mulberry32(1);
 
+/** Is the launch heading roughly forward along the loop at the racer's spot? */
+const forwardish = (l: { dir: Vector2D }, r: Racer) =>
+  V.dot(l.dir, tangentAt(track, r.loopT)) > 0;
+
 describe("placement", () => {
-  it("ranks by progress", () => {
-    const a = racer("a", { x: cx, y: 400 }); // further up = more progress
-    const b = racer("b", { x: cx, y: 900 });
+  it("ranks by progress (lap + loopT)", () => {
+    const a = racer("a", P(0.5));
+    const b = racer("b", P(0.2));
     const rs = [a, b];
     expect(placement(a, rs)).toBe(1);
     expect(placement(b, rs)).toBe(2);
@@ -63,69 +69,69 @@ describe("placement", () => {
 
 describe("bully", () => {
   it("aims at the nearest opponent within range, high power", () => {
-    const self = racer("bully", { x: cx, y: midY }, { botType: "bully" });
-    const prey = racer("prey", { x: cx + 120, y: midY }); // 120px to the right
+    const self = racer("bully", P(0.3), { botType: "bully" });
+    const prey = racer("prey", V.add(self.pos, { x: 120, y: 0 }));
     const l = computeLaunch(self, state([self, prey]), rng());
-    expect(l.dir.x).toBeGreaterThan(0.8); // pointing right at prey
+    const toPrey = V.normalize(V.sub(prey.pos, self.pos));
+    expect(V.dot(l.dir, toPrey)).toBeGreaterThan(0.8);
     expect(l.power).toBeGreaterThan(0.9);
   });
 
-  it("aims up-track when no opponent in range", () => {
-    const self = racer("bully", { x: cx, y: midY }, { botType: "bully" });
-    const far = racer("far", { x: cx, y: midY - 800 }); // >300px away
+  it("aims forward along the loop when no opponent is in range", () => {
+    const self = racer("bully", P(0.3), { botType: "bully" });
+    const far = racer("far", P(0.6)); // > 300px away
     const l = computeLaunch(self, state([self, far]), rng());
-    expect(l.dir.y).toBeLessThan(0); // pointing up-track
+    expect(forwardish(l, self)).toBe(true);
   });
 });
 
 describe("sniper", () => {
   it("caps power at 45% under a wave warning", () => {
-    const self = racer("snipe", { x: cx, y: midY }, { botType: "sniper" });
+    const self = racer("snipe", P(0.3), { botType: "sniper" });
     const l = computeLaunch(self, state([self], "warning"), rng());
     expect(l.power).toBeLessThanOrEqual(0.45);
-    expect(l.dir.y).toBeLessThan(0); // retreats up-track to safety
   });
 
-  it("aims generally up-track when clear", () => {
-    const self = racer("snipe", { x: cx, y: midY }, { botType: "sniper" });
+  it("aims generally forward when clear", () => {
+    const self = racer("snipe", P(0.3), { botType: "sniper" });
     const l = computeLaunch(self, state([self]), rng());
-    expect(l.dir.y).toBeLessThan(0);
+    expect(forwardish(l, self)).toBe(true);
     expect(l.power).toBeGreaterThan(0.4);
   });
 });
 
 describe("daredevil", () => {
   it("always fires at 100% power", () => {
-    const self = racer("dd", { x: cx, y: midY }, { botType: "daredevil" });
+    const self = racer("dd", P(0.3), { botType: "daredevil" });
     const l = computeLaunch(self, state([self]), rng());
     expect(l.power).toBe(1);
   });
 });
 
 describe("navigator", () => {
-  it("switches to bully logic when trailing (3rd/4th)", () => {
-    const self = racer("nav", { x: cx, y: 1000 }, { botType: "navigator" });
-    // Two opponents ahead => self is last.
-    const o1 = racer("o1", { x: cx, y: 300 });
-    const o2 = racer("o2", { x: cx, y: 400 });
-    const prey = racer("prey", { x: cx + 100, y: 1000 }); // nearby to ram
+  it("switches to bully logic when trailing", () => {
+    const self = racer("nav", P(0.1), { botType: "navigator" });
+    const o1 = racer("o1", P(0.6));
+    const o2 = racer("o2", P(0.7));
+    const prey = racer("prey", V.add(self.pos, { x: 90, y: 0 }));
     const rs = [self, o1, o2, prey];
     expect(placement(self, rs)).toBeGreaterThanOrEqual(3);
     const l = computeLaunch(self, state(rs), rng());
-    expect(l.dir.x).toBeGreaterThan(0.5); // ramming the nearby prey (bully)
+    const toPrey = V.normalize(V.sub(prey.pos, self.pos));
+    expect(V.dot(l.dir, toPrey)).toBeGreaterThan(0.5);
   });
 
-  it("uses sniper logic when leading", () => {
-    const self = racer("nav", { x: cx, y: 300 }, { botType: "navigator" });
-    const trailer = racer("t", { x: cx + 100, y: 1100 });
+  it("uses sniper logic (forward) when leading", () => {
+    const self = racer("nav", P(0.7), { botType: "navigator" });
+    const trailer = racer("t", P(0.1));
     const l = computeLaunch(self, state([self, trailer]), rng());
-    expect(l.dir.y).toBeLessThan(0); // heads to finish, not at the far trailer
+    expect(forwardish(l, self)).toBe(true);
   });
 });
 
 describe("beachcomber", () => {
   it("keeps power within the erratic band and is seed-deterministic", () => {
-    const self = racer("bc", { x: cx, y: midY }, { botType: "beachcomber" });
+    const self = racer("bc", P(0.3), { botType: "beachcomber" });
     const l1 = computeLaunch(self, state([self]), mulberry32(99));
     const l2 = computeLaunch(self, state([self]), mulberry32(99));
     expect(l1).toEqual(l2);
@@ -135,11 +141,11 @@ describe("beachcomber", () => {
 });
 
 describe("coast-glider", () => {
-  it("uses low efficient power", () => {
-    const self = racer("cg", { x: cx, y: midY }, { botType: "coastglider" });
+  it("uses low efficient power, heading forward", () => {
+    const self = racer("cg", P(0.3), { botType: "coastglider" });
     const l = computeLaunch(self, state([self]), rng());
     expect(l.power).toBeLessThanOrEqual(0.6);
-    expect(l.dir.y).toBeLessThan(0);
+    expect(forwardish(l, self)).toBe(true);
   });
 });
 
@@ -154,7 +160,7 @@ describe("computeLaunch contract", () => {
       "daredevil",
     ];
     for (const bt of types) {
-      const self = racer(bt, { x: cx, y: midY }, { botType: bt });
+      const self = racer(bt, P(0.3), { botType: bt });
       const l = computeLaunch(self, state([self]), mulberry32(7));
       expect(V.len(l.dir)).toBeCloseTo(1, 6);
       expect(l.power).toBeGreaterThanOrEqual(0.05);

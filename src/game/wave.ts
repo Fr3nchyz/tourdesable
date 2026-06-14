@@ -12,7 +12,14 @@ import type {
   CircleObstacle,
   Vector2D,
 } from "./types";
-import { isOutOfBounds, centerlineXAt } from "./track";
+import {
+  nearestOnLoop,
+  loopPointAt,
+  tangentAt,
+  isPastBerm,
+  isOffBoard,
+} from "./track";
+import * as V from "./vector";
 import type { Rng } from "./rng";
 import { randRange, pick } from "./rng";
 import {
@@ -35,23 +42,25 @@ export function rollWave(round: number, rng: Rng): boolean {
 }
 
 /**
- * Impact: every marble in the lower zone is shoved WAVE_PUSHBACK px backward
- * along the track (toward the start => +y). Any marble forced off the track is
- * tipped (misses its next turn). Returns a new racer array.
+ * Impact: every marble in the lower zone is shoved WAVE_PUSHBACK px *backward
+ * along the loop* (against its forward tangent). Any marble forced over a berm
+ * or off the board is tipped (misses its next turn). Returns a new racer array.
  */
 export function applyWaveImpact(racers: Racer[], track: Track): Racer[] {
   const zoneTopY = waveZoneTopY(track);
   return racers.map((r) => {
     if (r.state === "finished") return r;
     if (r.pos.y < zoneTopY) return r; // outside the wave zone
-    const pushed: Vector2D = { x: r.pos.x, y: r.pos.y + WAVE_PUSHBACK };
+    const proj = nearestOnLoop(track, r.pos);
+    const pushed: Vector2D = V.add(r.pos, V.scale(proj.tangent, -WAVE_PUSHBACK));
     const next: Racer = {
       ...r,
       pos: pushed,
       vel: { x: 0, y: 0 },
-      progress: track.centerline[0].y - pushed.y,
+      loopT: nearestOnLoop(track, pushed).t,
     };
-    if (isOutOfBounds(track, pushed)) {
+    next.progress = next.lap + next.loopT;
+    if (isPastBerm(track, pushed) || isOffBoard(track, pushed)) {
       next.state = "tipped";
       next.skipNextTurn = true;
     }
@@ -68,12 +77,20 @@ export function makeAftermathObstacles(
   const zoneTopY = waveZoneTopY(track);
   const out: CircleObstacle[] = [];
   for (let i = 0; i < count; i++) {
-    const y = randRange(rng, zoneTopY + 20, track.height - 40);
-    const cx = centerlineXAt(track, y);
-    const offset = randRange(rng, -track.laneHalfWidth, track.laneHalfWidth);
+    // Sample loop positions until one lands in the lower (waterlogged) zone.
+    let pos: Vector2D | null = null;
+    for (let tries = 0; tries < 8 && !pos; tries++) {
+      const t = rng();
+      const center = loopPointAt(track, t);
+      const leftN = V.perp(tangentAt(track, t));
+      const lateral = randRange(rng, -track.laneHalfWidth, track.laneHalfWidth);
+      const cand = V.add(center, V.scale(leftN, lateral));
+      if (cand.y >= zoneTopY) pos = cand;
+    }
+    if (!pos) continue;
     out.push({
       kind: pick(rng, ["kelp", "clamshell"] as const),
-      pos: { x: cx + offset, y },
+      pos,
       radius: randRange(rng, 18, 30),
       temporary: true,
     });

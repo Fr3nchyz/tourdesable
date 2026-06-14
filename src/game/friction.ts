@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Track, Vector2D, WaveState, Zone } from "./types";
-import { offsetFromCenter, isOutOfBounds } from "./track";
+import { offsetFromCenter, isPastBerm } from "./track";
 import {
   BASE_FRICTION,
   SHOULDER_FRICTION,
@@ -34,7 +34,7 @@ export function inWaterlogged(pos: Vector2D, wave: WaveState): boolean {
  * out-of-bounds > kelp (drag obstacle) > waterlogged > lane/shoulder.
  */
 export function zoneAt(track: Track, pos: Vector2D, wave: WaveState): Zone {
-  if (isOutOfBounds(track, pos)) return "out";
+  if (isPastBerm(track, pos)) return "out"; // on/over a berm bank
   if (inKelp(track, pos)) return "kelp";
   if (inWaterlogged(pos, wave)) return "waterlogged";
   return offsetFromCenter(track, pos) <= track.laneHalfWidth

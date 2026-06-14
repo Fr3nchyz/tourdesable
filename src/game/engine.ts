@@ -13,7 +13,7 @@ import { activeRacer, startNextTurn } from "./stateMachine";
 import { computeLaunch } from "./ai";
 import { mulberry32 } from "./rng";
 import { progressAlongPath, atFinish, isOffCourse } from "./track";
-import { MAX_IMPULSE } from "./constants";
+import { MAX_IMPULSE, TRAIL_LIFETIME } from "./constants";
 
 /** 3D impulse vector passed to Rapier's applyImpulse. */
 export interface Impulse3D {
@@ -81,6 +81,24 @@ export function updateRacerPos(
 
   r.lastInBoundsPos = { ...pos };
   return "ok";
+}
+
+/**
+ * Carve the just-finished shot's path into the persistent trail layer.
+ * Down-samples the per-frame path into a handful of segments so a later
+ * marble crossing the channel gets a temporary fast lane.
+ */
+export function recordTrail(state: GameState, path: Vector2D[]): void {
+  if (path.length < 2) return;
+  const step = Math.max(1, Math.floor(path.length / 24));
+  let prev = path[0];
+  for (let i = step; i < path.length; i += step) {
+    const cur = path[i];
+    if (V.dist(prev, cur) > 0.6) {
+      state.trails.push({ a: { ...prev }, b: { ...cur }, turnsLeft: TRAIL_LIFETIME });
+    }
+    prev = cur;
+  }
 }
 
 /** Called by the R3F marble component when all marbles have settled. */

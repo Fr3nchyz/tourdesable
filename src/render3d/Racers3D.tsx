@@ -13,7 +13,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { RigidBody } from "@react-three/rapier";
 import type { RapierRigidBody } from "@react-three/rapier";
-import type { Racer, Track, Vector2D } from "@/game/types";
+import type { Racer, Track, TrailSegment, Vector2D } from "@/game/types";
 import { heightAt } from "@/game/track";
 import { surfaceAt } from "@/game/surface";
 import Cyclist from "./Cyclist";
@@ -41,6 +41,7 @@ export interface Impulse3D {
 interface ActiveMarbleProps {
   racer: Racer;
   track: Track;
+  trails: TrailSegment[];
   impulseRef: React.RefObject<Impulse3D | null>;
   inPhysics: boolean;
   onRacerPos: (
@@ -49,12 +50,13 @@ interface ActiveMarbleProps {
     wy: number,
     wz: number,
   ) => "finish" | "offcourse" | "ok";
-  onSettle: () => void;
+  onSettle: (carvedPath: Vector2D[]) => void;
 }
 
 function ActiveMarble({
   racer,
   track,
+  trails,
   impulseRef,
   inPhysics,
   onRacerPos,
@@ -65,6 +67,7 @@ function ActiveMarble({
   const settleStart = useRef(0);
   const firedSettle = useRef(false);
   const impulseConsumed = useRef(false);
+  const carved = useRef<Vector2D[]>([]);
 
   useFrame(() => {
     const rb = rbRef.current;
@@ -79,6 +82,7 @@ function ActiveMarble({
       impulseConsumed.current = true;
       settleStart.current = Date.now();
       settleCount.current = 0;
+      carved.current = [];
       return; // give Rapier one frame before we start reading velocity
     }
 
@@ -88,10 +92,12 @@ function ActiveMarble({
     const vel = rb.linvel();
     const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
 
-    // Surface displacement: material-driven damping + sink-to-stop. Sampled at
-    // the marble's ground position and pushed into the Rapier body each frame.
+    // Surface displacement: material damping + grain variance + sink-to-stop +
+    // trail fast-lane + grain/camber lateral. Sampled at the marble's ground
+    // position and pushed into the Rapier body each frame.
     const sample = surfaceAt(
       track,
+      trails,
       { x: pos.x, y: pos.z },
       { x: vel.x, y: vel.z },
     );
@@ -100,10 +106,13 @@ function ActiveMarble({
       rb.applyImpulse({ x: sample.lateral.x, y: 0, z: sample.lateral.y }, true);
     }
 
+    // Record the carved path (for the persistent deformation layer).
+    carved.current.push({ x: pos.x, y: pos.z });
+
     const result = onRacerPos(racer.id, pos.x, pos.y, pos.z);
     if (result !== "ok") {
       firedSettle.current = true;
-      onSettle();
+      onSettle(carved.current);
       return;
     }
 
@@ -116,7 +125,7 @@ function ActiveMarble({
     const elapsed = Date.now() - settleStart.current;
     if (settleCount.current >= SETTLE_FRAMES || elapsed >= MAX_SETTLE_MS) {
       firedSettle.current = true;
-      onSettle();
+      onSettle(carved.current);
     }
   });
 
@@ -167,6 +176,7 @@ export interface Racers3DProps {
   racers: Racer[];
   activeId: string;
   track: Track;
+  trails: TrailSegment[];
   impulseRef: React.RefObject<Impulse3D | null>;
   inPhysics: boolean;
   onRacerPos: (
@@ -175,13 +185,14 @@ export interface Racers3DProps {
     wy: number,
     wz: number,
   ) => "finish" | "offcourse" | "ok";
-  onSettle: () => void;
+  onSettle: (carvedPath: Vector2D[]) => void;
 }
 
 export default function Racers3D({
   racers,
   activeId,
   track,
+  trails,
   impulseRef,
   inPhysics,
   onRacerPos,
@@ -197,6 +208,7 @@ export default function Racers3D({
           key={activeId}
           racer={active}
           track={track}
+          trails={trails}
           impulseRef={impulseRef}
           inPhysics={inPhysics}
           onRacerPos={onRacerPos}

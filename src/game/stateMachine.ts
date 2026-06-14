@@ -119,8 +119,15 @@ export const isBotInput = (state: GameState): boolean =>
   state.turnSubPhase === "INPUT" &&
   !activeRacer(state).isHuman;
 
+/** Age the persistent trail layer by one turn, pruning filled-in channels. */
+export function decayTrails(state: GameState): void {
+  for (const t of state.trails) t.turnsLeft -= 1;
+  state.trails = state.trails.filter((t) => t.turnsLeft > 0);
+}
+
 /** Advance to the next racer that can act; flip to VICTORY when won. */
 export function startNextTurn(state: GameState): void {
+  decayTrails(state);
   if (state.winnerId) {
     state.phase = "VICTORY";
     return;

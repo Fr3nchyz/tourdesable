@@ -9,10 +9,11 @@
 import type { ThreeEvent } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
 import { EffectComposer, DepthOfField, Vignette } from "@react-three/postprocessing";
-import type { Track, Racer, Vector2D } from "@/game/types";
+import type { Track, Racer, TrailSegment, Vector2D } from "@/game/types";
 import { GRAVITY, MARBLE_RADIUS, MAX_DRAG_WORLD } from "@/game/constants";
 import Terrain from "./Terrain";
 import Rocks3D from "./Rocks3D";
+import Trails3D from "./Trails3D";
 import Racers3D, { type Impulse3D } from "./Racers3D";
 import OrbitCamera from "./OrbitCamera";
 import DirectionArrow from "./DirectionArrow";
@@ -27,12 +28,13 @@ export interface SceneProps {
   track: Track;
   racers: Racer[];
   activeId: string;
+  trails: TrailSegment[];
   inPhysics: boolean;
   aim: AimState | null;
   impulseRef: React.RefObject<Impulse3D | null>;
   recenterRef: React.RefObject<boolean>;
   onRacerPos: (id: string, wx: number, wy: number, wz: number) => "finish" | "offcourse" | "ok";
-  onSettle: () => void;
+  onSettle: (carvedPath: Vector2D[]) => void;
   onAimDown: (ground: Vector2D) => void;
   onAimMove: (ground: Vector2D) => void;
   onAimUp: () => void;
@@ -67,6 +69,7 @@ export default function Scene({
   track,
   racers,
   activeId,
+  trails,
   inPhysics,
   aim,
   impulseRef,
@@ -117,12 +120,16 @@ export default function Scene({
           racers={racers}
           activeId={activeId}
           track={track}
+          trails={trails}
           impulseRef={impulseRef}
           inPhysics={inPhysics}
           onRacerPos={onRacerPos}
           onSettle={onSettle}
         />
       </Physics>
+
+      {/* Carved sand channels (persistent deformation layer) */}
+      <Trails3D track={track} trails={trails} />
 
       {/* Direction arrow over active marble */}
       {active && !inPhysics && (

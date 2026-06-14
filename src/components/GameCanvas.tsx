@@ -15,6 +15,7 @@ import {
   takeBotTurn,
   updateRacerPos,
   onSettled,
+  recordTrail,
 } from "@/game/engine";
 import type { Impulse3D } from "@/render3d/Racers3D";
 import { audio } from "@/audio/audio";
@@ -60,11 +61,15 @@ export default function GameCanvas() {
   }, [publish]);
 
   // --- settle callback (called from inside the R3F Canvas) ---
-  const handleSettle = useCallback(() => {
-    onSettled(stateRef.current);
-    publish();
-    recenterRef.current = true;
-  }, [publish]);
+  const handleSettle = useCallback(
+    (carvedPath: Vector2D[]) => {
+      recordTrail(stateRef.current, carvedPath);
+      onSettled(stateRef.current);
+      publish();
+      recenterRef.current = true;
+    },
+    [publish],
+  );
 
   // --- position update (called per-frame from inside R3F, no re-render) ---
   const handleRacerPos = useCallback(
@@ -166,6 +171,7 @@ export default function GameCanvas() {
           track={track}
           racers={view.racers}
           activeId={activeId}
+          trails={view.trails}
           inPhysics={inPhysics}
           aim={aim}
           impulseRef={impulseRef}

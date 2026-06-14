@@ -54,6 +54,20 @@ export const SINK_SCALE = 1.1;
 /** Half-width (m) of the cambered racing lane; |x| beyond this is shoulder. */
 export const LANE_HALF_WIDTH = 9;
 
+// Grain variance: low-frequency Perlin noise so no two patches feel identical.
+/** Spatial frequency of the grain noise (cycles per metre). */
+export const GRAIN_FREQ = 0.09;
+/** Lateral micro-wobble force scale (× speed) from the grain field. */
+export const WOBBLE_GAIN = 0.05;
+/** Below this speed (m/s) grain wobble is suppressed (settle-safe). */
+export const WOBBLE_MIN_SPEED = 0.45;
+
+// Deformation trails ("persistent layer"): carved channels = temporary fast lanes.
+/** Turns a carved channel persists before filling back in. */
+export const TRAIL_LIFETIME = 4;
+/** Half-width (m) of a carved channel's fast lane. */
+export const TRAIL_WIDTH = 1.6;
+
 // --- Course (metres) ---
 export const COURSE_WIDTH = 44;
 export const COURSE_LENGTH = 92;

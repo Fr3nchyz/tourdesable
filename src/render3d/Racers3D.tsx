@@ -69,9 +69,22 @@ function ActiveMarble({
   const impulseConsumed = useRef(false);
   const carved = useRef<Vector2D[]>([]);
 
+  // Spawn position — computed once per turn (component remounts via marbleKey).
+  const spawnX = racer.pos.x;
+  const spawnZ = racer.pos.y;
+  const spawnY = heightAt(track, spawnX, spawnZ) + MARBLE_RADIUS + 0.1;
+
   useFrame(() => {
     const rb = rbRef.current;
-    if (!rb || !inPhysics || firedSettle.current) return;
+    if (!rb || firedSettle.current) return;
+
+    // Before the player flicks: pin the body at spawn so the cyclist stands still.
+    if (!inPhysics) {
+      rb.setTranslation({ x: spawnX, y: spawnY, z: spawnZ }, true);
+      rb.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      rb.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      return;
+    }
 
     // Consume the pending impulse on the first physics frame.
     if (impulseRef.current !== null && !impulseConsumed.current) {
@@ -129,14 +142,11 @@ function ActiveMarble({
     }
   });
 
-  const spawnX = racer.pos.x;
-  const spawnZ = racer.pos.y; // racer.pos.y = world Z
-  const spawnY = heightAt(track, spawnX, spawnZ) + MARBLE_RADIUS + 0.1;
-
   return (
     <RigidBody
       ref={rbRef}
       colliders={false}
+      lockRotations
       position={[spawnX, spawnY, spawnZ]}
       linearDamping={MARBLE_LINEAR_DAMPING}
       angularDamping={MARBLE_ANGULAR_DAMPING}

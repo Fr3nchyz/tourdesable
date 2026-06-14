@@ -16,7 +16,7 @@ import {
   type Theme,
 } from "./constants";
 
-const PATH_POINTS = 13;
+const PATH_POINTS = 20;
 
 interface ThemeParams {
   elevation: Omit<ElevationField, "theme" | "seed">;
@@ -30,21 +30,21 @@ interface ThemeParams {
 const THEME_PARAMS: Record<Theme, ThemeParams> = {
   "trez-hir": {
     elevation: { amp: 0.35, freq: 0.14, cliffAmp: 0, slope: 1 },
-    wander: 0.40,
+    wander: 0.55,
     rockCount: [4, 7],
     rockRadius: [0.8, 1.6],
     rockHeight: [0.6, 1.2],
   },
   "le-minou": {
     elevation: { amp: 0.9, freq: 0.17, cliffAmp: 1.6, slope: 2.5 },
-    wander: 0.50,
+    wander: 0.68,
     rockCount: [6, 10],
     rockRadius: [1.0, 2.2],
     rockHeight: [1.0, 2.4],
   },
   bertheaume: {
     elevation: { amp: 2.6, freq: 0.2, cliffAmp: 9, slope: 5 },
-    wander: 0.50,
+    wander: 0.62,
     rockCount: [10, 15],
     rockRadius: [1.4, 3.2],
     rockHeight: [2.0, 5.0],
@@ -67,7 +67,10 @@ export function generateTrack(seed: number, theme: Theme): Track {
     const t = i / (PATH_POINTS - 1);
     const z = start.y + (finish.y - start.y) * t;
     const baseX = start.x + (finish.x - start.x) * t;
-    const wander = i === 0 || i === PATH_POINTS - 1 ? 0 : randRange(rng, -width * tp.wander, width * tp.wander);
+    // Sinusoidal bias forces S-curves; random component adds variety.
+    const bias = Math.sin((i / (PATH_POINTS - 1)) * Math.PI * 3.5) * width * tp.wander * 0.55;
+    const noise = randRange(rng, -width * tp.wander * 0.45, width * tp.wander * 0.45);
+    const wander = i === 0 || i === PATH_POINTS - 1 ? 0 : bias + noise;
     path.push({ x: clamp(baseX + wander, -width / 2 + 2, width / 2 - 2), y: z });
   }
 

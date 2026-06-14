@@ -7,6 +7,7 @@ import {
   grainAt,
   onTrail,
   trailFrictionMultiplier,
+  camberLateral,
 } from "./surface";
 import { recordTrail } from "./engine";
 import { decayTrails } from "./stateMachine";
@@ -112,6 +113,29 @@ describe("trails", () => {
     decayTrails(s);
     expect(s.trails).toHaveLength(1);
     expect(s.trails[0].turnsLeft).toBe(2);
+  });
+});
+
+describe("camberLateral", () => {
+  const vel = { x: 0, y: 5 };
+
+  it("pushes toward +X on the right of the lane, -X on the left", () => {
+    expect(camberLateral(track, { x: 6, y: 40 }, vel).x).toBeGreaterThan(0);
+    expect(camberLateral(track, { x: -6, y: 40 }, vel).x).toBeLessThan(0);
+  });
+
+  it("is zero exactly at the lane centre", () => {
+    expect(camberLateral(track, { x: 0, y: 40 }, vel)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("grows with offset from centre", () => {
+    const near = camberLateral(track, { x: 2, y: 40 }, vel).x;
+    const far = camberLateral(track, { x: 8, y: 40 }, vel).x;
+    expect(far).toBeGreaterThan(near);
+  });
+
+  it("vanishes at rest (settle-safe)", () => {
+    expect(camberLateral(track, { x: 8, y: 40 }, { x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
   });
 });
 

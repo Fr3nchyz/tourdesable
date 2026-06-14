@@ -22,6 +22,9 @@ import {
   WOBBLE_GAIN,
   WOBBLE_MIN_SPEED,
   TRAIL_WIDTH,
+  LANE_HALF_WIDTH,
+  CAMBER_GAIN,
+  CAMBER_MIN_SPEED,
 } from "./constants";
 
 /** What the marble pushes into Rapier this frame. */
@@ -130,6 +133,27 @@ export function trailFrictionMultiplier(
 }
 
 // ---------------------------------------------------------------------------
+// Camber
+// ---------------------------------------------------------------------------
+
+/**
+ * Lateral camber force (ground XZ). The lane crowns at x=0, so a marble drifts
+ * toward the nearer shoulder ∝ its offset from centre. Scaled by speed and
+ * suppressed at rest so it never stalls settle detection. Direction is along
+ * world X (across the beach), away from the lane centre.
+ */
+export function camberLateral(
+  _track: Track,
+  pos: Vector2D,
+  vel: Vector2D,
+): Vector2D {
+  const speed = V.len(vel);
+  if (speed < CAMBER_MIN_SPEED) return { x: 0, y: 0 };
+  const t = Math.max(-1, Math.min(1, pos.x / LANE_HALF_WIDTH));
+  return { x: CAMBER_GAIN * t * Math.min(speed, 6), y: 0 };
+}
+
+// ---------------------------------------------------------------------------
 // Combined sample
 // ---------------------------------------------------------------------------
 
@@ -165,6 +189,8 @@ export function surfaceAt(
     const perp = V.perp(V.normalize(vel)); // left-hand normal to travel
     lateral = V.scale(perp, w * WOBBLE_GAIN * Math.min(speed, 6));
   }
+  // Camber: crowned lane pushes the marble toward the shoulder.
+  lateral = V.add(lateral, camberLateral(track, pos, vel));
 
   return { damping, friction: 0.9, lateral };
 }

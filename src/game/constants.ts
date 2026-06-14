@@ -68,6 +68,19 @@ export const TRAIL_LIFETIME = 4;
 /** Half-width (m) of a carved channel's fast lane. */
 export const TRAIL_WIDTH = 1.6;
 
+// Camber: the lane crowns at the centre, so an imprecise launch drifts to a
+// shoulder. Modelled as a speed-scaled lateral force ∝ offset from lane centre.
+/** Lateral camber force scale (× normalised offset × speed). */
+export const CAMBER_GAIN = 0.045;
+/** Below this speed (m/s) camber is suppressed (settle-safe). */
+export const CAMBER_MIN_SPEED = 0.3;
+
+// Launch "tension": the aim arrow strains (jitters) as power approaches max.
+/** Aim power above which the arrow visibly jitters. */
+export const TENSION_THRESHOLD = 0.82;
+/** Peak jitter amplitude (world m) at full power. */
+export const TENSION_JITTER = 0.14;
+
 // --- Course (metres) ---
 export const COURSE_WIDTH = 44;
 export const COURSE_LENGTH = 92;

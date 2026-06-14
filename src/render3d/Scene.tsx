@@ -6,11 +6,20 @@
 // collision surface; the active racer's marble is a dynamic RigidBody.
 // ============================================================================
 
+import { useRef } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
+import type { Group } from "three";
 import { Physics } from "@react-three/rapier";
 import { EffectComposer, DepthOfField, Vignette } from "@react-three/postprocessing";
 import type { Track, Racer, TrailSegment, Vector2D } from "@/game/types";
-import { GRAVITY, MARBLE_RADIUS, MAX_DRAG_WORLD } from "@/game/constants";
+import {
+  GRAVITY,
+  MARBLE_RADIUS,
+  MAX_DRAG_WORLD,
+  TENSION_THRESHOLD,
+  TENSION_JITTER,
+} from "@/game/constants";
 import Terrain from "./Terrain";
 import Rocks3D from "./Rocks3D";
 import Trails3D from "./Trails3D";
@@ -48,11 +57,37 @@ function AimArrow({
   origin: [number, number, number];
   aim: AimState;
 }) {
-  const len = aim.power * MAX_DRAG_WORLD * 0.8;
+  const groupRef = useRef<Group>(null);
+  const baseX = origin[0];
+  const baseY = origin[1] + MARBLE_RADIUS + 0.1;
+  const baseZ = origin[2];
+
+  // Tension curve: the last bit of drag "strains" — length eases toward max so
+  // power feels harder to add near full power.
+  const len = Math.pow(aim.power, 1.4) * MAX_DRAG_WORLD * 0.85;
   const heading = Math.atan2(-aim.dir.y, aim.dir.x);
   const color = aim.power > 0.8 ? "#e63946" : aim.power > 0.5 ? "#f4a261" : "#2a9d8f";
+
+  // Near max power the arrow jitters to signal physical strain.
+  useFrame(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    if (aim.power > TENSION_THRESHOLD) {
+      const k =
+        ((aim.power - TENSION_THRESHOLD) / (1 - TENSION_THRESHOLD)) *
+        TENSION_JITTER;
+      g.position.set(
+        baseX + (Math.random() - 0.5) * k,
+        baseY + (Math.random() - 0.5) * k,
+        baseZ + (Math.random() - 0.5) * k,
+      );
+    } else {
+      g.position.set(baseX, baseY, baseZ);
+    }
+  });
+
   return (
-    <group position={[origin[0], origin[1] + MARBLE_RADIUS + 0.1, origin[2]]} rotation={[0, heading, 0]}>
+    <group ref={groupRef} position={[baseX, baseY, baseZ]} rotation={[0, heading, 0]}>
       <mesh position={[len / 2, 0, 0]}>
         <boxGeometry args={[len, 0.08, 0.5]} />
         <meshBasicMaterial color={color} transparent opacity={0.85} />

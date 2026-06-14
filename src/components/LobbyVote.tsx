@@ -1,55 +1,36 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import type { Track } from "@/game/types";
+import type { Theme } from "@/game/constants";
 
-const THUMB = 240;
+const THEME_META: Record<Theme, { desc: string; diff: string; color: string; emoji: string }> = {
+  "blancs-sablons": {
+    desc: "Wide flat dunes stretch to the horizon. Gentle rolls, forgiving sand.",
+    diff: "Easy",
+    color: "#e9d8a6",
+    emoji: "🏖️",
+  },
+  "le-minou": {
+    desc: "Mild dunes with scattered boulders. A classic coastal challenge.",
+    diff: "Medium",
+    color: "#c4a97a",
+    emoji: "🌊",
+  },
+  bertheaume: {
+    desc: "Dramatic rocky cliffs, real elevation, treacherous sea on one flank.",
+    diff: "Hard",
+    color: "#8a7060",
+    emoji: "⛰️",
+  },
+};
 
-/** Draw a top-down preview of the loop circuit into a thumbnail canvas. */
-function drawThumb(ctx: CanvasRenderingContext2D, track: Track, size: number) {
-  ctx.clearRect(0, 0, size, size);
-  // Sand backdrop.
-  ctx.fillStyle = "#e4d29a";
-  ctx.fillRect(0, 0, size, size);
+const DIFF_PIPS: Record<string, string> = {
+  Easy: "⬤⬜⬜",
+  Medium: "⬤⬤⬜",
+  Hard: "⬤⬤⬤",
+};
 
-  const sx = size / track.width;
-  const sy = size / track.height;
-  const pt = (p: { x: number; y: number }) => ({ x: p.x * sx, y: p.y * sy });
-
-  // Outer channel band (berm to berm).
-  const drawRing = (width: number, stroke: string) => {
-    ctx.beginPath();
-    track.loop.forEach((p, i) => {
-      const q = pt(p);
-      if (i === 0) ctx.moveTo(q.x, q.y);
-      else ctx.lineTo(q.x, q.y);
-    });
-    ctx.closePath();
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = width;
-    ctx.lineJoin = "round";
-    ctx.stroke();
-  };
-
-  drawRing(track.trackHalfWidth * 2 * sx, "#cdaf6e"); // berm band
-  drawRing(track.laneHalfWidth * 2 * sx, "#efe2b4"); // racing channel
-
-  // Finish line marker at loop[0].
-  const f = pt(track.loop[0]);
-  ctx.fillStyle = "#222";
-  ctx.fillRect(f.x - 5, f.y - 5, 10, 10);
-
-  // Obstacles.
-  for (const o of track.obstacles) {
-    const q = pt(o.pos);
-    ctx.fillStyle = o.kind === "driftwood" ? "#8a6a43" : "#2f7d4f";
-    ctx.beginPath();
-    ctx.arc(q.x, q.y, 4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-function Thumb({
+function TrackCard({
   track,
   index,
   onSelect,
@@ -58,21 +39,34 @@ function Thumb({
   index: number;
   onSelect: (i: number) => void;
 }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = ref.current;
-    if (c) drawThumb(c.getContext("2d")!, track, THUMB);
-  }, [track]);
-
+  const meta = THEME_META[track.theme];
   return (
     <button
       onClick={() => onSelect(index)}
-      className="group flex flex-col items-center gap-2 rounded-xl border-2 border-amber-900/30 bg-amber-50 p-3 shadow-lg transition hover:-translate-y-1 hover:border-amber-600 hover:shadow-xl"
+      className="group flex flex-col items-start gap-3 rounded-2xl border-2 border-amber-900/25 bg-amber-50/10 p-5 text-left shadow-lg backdrop-blur transition hover:-translate-y-1 hover:border-amber-400 hover:bg-amber-50/20 hover:shadow-xl"
+      style={{ minWidth: 220, maxWidth: 260 }}
     >
-      <canvas ref={ref} width={THUMB} height={THUMB} className="rounded-md" />
-      <span className="font-mono text-sm font-semibold text-amber-900">
-        Circuit #{track.seed}
-      </span>
+      {/* Terrain preview: a small gradient strip representing elevation */}
+      <div
+        className="h-28 w-full rounded-lg"
+        style={{
+          background: `linear-gradient(135deg, ${meta.color}cc 0%, ${meta.color}55 50%, #4a90d9aa 100%)`,
+          boxShadow: "inset 0 2px 8px #0003",
+        }}
+        aria-hidden
+      >
+        <span className="flex h-full items-center justify-center text-5xl select-none">
+          {meta.emoji}
+        </span>
+      </div>
+
+      <div>
+        <div className="text-lg font-black text-amber-50">{track.name}</div>
+        <div className="mt-0.5 font-mono text-xs text-amber-300">
+          {DIFF_PIPS[meta.diff]} {meta.diff}
+        </div>
+        <p className="mt-2 text-sm leading-snug text-amber-100/80">{meta.desc}</p>
+      </div>
     </button>
   );
 }
@@ -85,18 +79,18 @@ export default function LobbyVote({
   onSelect: (i: number) => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-6 p-8">
+    <div className="flex flex-col items-center gap-8 p-8">
       <div className="text-center">
-        <h1 className="text-4xl font-black tracking-tight text-amber-100">
+        <h1 className="text-5xl font-black tracking-tight text-amber-100">
           Tour de Sable
         </h1>
-        <p className="mt-1 text-amber-200/80">
-          Choose your circuit on the Blancs-Sablons flatlands.
+        <p className="mt-2 text-lg text-amber-200/75">
+          Choose your coastal course
         </p>
       </div>
       <div className="flex flex-wrap justify-center gap-5">
         {tracks.map((t, i) => (
-          <Thumb key={t.seed} track={t} index={i} onSelect={onSelect} />
+          <TrackCard key={t.theme} track={t} index={i} onSelect={onSelect} />
         ))}
       </div>
     </div>

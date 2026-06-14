@@ -1,253 +1,200 @@
 // ============================================================================
-// tour-de-sable — dug-circuit track generation + loop geometry helpers
-// The track is a closed loop (ring) carved into the sand. Racers flick their
-// marbles around the channel between two LOW berm banks. Every seed yields a
-// distinct but always-playable circuit that fits inside the board.
+// tour-de-sable — A→B coastal course generation + geometry/terrain helpers
+// World units (metres). Course runs along +Z; X is across the beach; +Y up.
 // ============================================================================
 
-import type { Track, Obstacle, Vector2D } from "./types";
+import type { Track, Rock, Vector2D, ElevationField } from "./types";
 import { mulberry32, randRange, randInt, type Rng } from "./rng";
 import * as V from "./vector";
 import {
-  BOARD_WIDTH,
-  BOARD_HEIGHT,
-  TRACK_HALF_WIDTH,
+  COURSE_WIDTH,
+  COURSE_LENGTH,
+  FINISH_RADIUS,
+  SEA_LEVEL_Y,
   RACER_COUNT,
+  THEME_NAMES,
+  type Theme,
 } from "./constants";
 
-const TAU = Math.PI * 2;
-const LOOP_POINTS = 56;
-const BOARD_MARGIN = 64;
+const PATH_POINTS = 9;
 
-/**
- * Deterministically generate a circuit from a seed. Same seed => identical track.
- */
-export function generateTrack(seed: number): Track {
+interface ThemeParams {
+  elevation: Omit<ElevationField, "theme" | "seed">;
+  rockCount: [number, number];
+  rockRadius: [number, number];
+  rockHeight: [number, number];
+}
+
+const THEME_PARAMS: Record<Theme, ThemeParams> = {
+  "blancs-sablons": {
+    elevation: { amp: 0.35, freq: 0.14, cliffAmp: 0, slope: 1 },
+    rockCount: [2, 4],
+    rockRadius: [0.8, 1.6],
+    rockHeight: [0.6, 1.2],
+  },
+  "le-minou": {
+    elevation: { amp: 0.9, freq: 0.17, cliffAmp: 1.6, slope: 2.5 },
+    rockCount: [4, 7],
+    rockRadius: [1.0, 2.2],
+    rockHeight: [1.0, 2.4],
+  },
+  bertheaume: {
+    elevation: { amp: 1.7, freq: 0.2, cliffAmp: 6, slope: 4.5 },
+    rockCount: [7, 11],
+    rockRadius: [1.4, 3.2],
+    rockHeight: [2.0, 5.0],
+  },
+};
+
+/** Deterministically generate a themed A→B course from a seed. */
+export function generateTrack(seed: number, theme: Theme): Track {
   const rng = mulberry32(seed);
-  const width = BOARD_WIDTH;
-  const height = BOARD_HEIGHT;
-  const cx = width / 2;
-  const cy = height / 2;
+  const width = COURSE_WIDTH;
+  const length = COURSE_LENGTH;
+  const tp = THEME_PARAMS[theme];
 
-  const laneHalfWidth = randRange(rng, 56, 70);
-  const trackHalfWidth = TRACK_HALF_WIDTH;
+  const start: Vector2D = { x: randRange(rng, -4, 4), y: 6 };
+  const finish: Vector2D = { x: randRange(rng, -6, 6), y: length - 6 };
 
-  // Base ring radii (kept conservative so channel + berm stay inside the board).
-  const maxR = Math.min(width, height) / 2 - BOARD_MARGIN - trackHalfWidth;
-  const baseRx = maxR * randRange(rng, 0.72, 0.84);
-  const baseRy = maxR * randRange(rng, 0.72, 0.84);
-
-  // A few radial harmonics make the ring wander without self-intersecting.
-  const harmonics = [
-    { k: 2, amp: randRange(rng, 0.04, 0.1), phase: rng() * TAU },
-    { k: 3, amp: randRange(rng, 0.03, 0.08), phase: rng() * TAU },
-    { k: 5, amp: randRange(rng, 0.0, 0.05), phase: rng() * TAU },
-  ];
-
-  const loop: Vector2D[] = [];
-  for (let i = 0; i < LOOP_POINTS; i++) {
-    const theta = (TAU * i) / LOOP_POINTS;
-    let rfac = 1;
-    for (const h of harmonics) rfac += h.amp * Math.sin(h.k * theta + h.phase);
-    loop.push({
-      x: cx + baseRx * rfac * Math.cos(theta),
-      y: cy + baseRy * rfac * Math.sin(theta),
-    });
+  // Wandering centerline start -> finish.
+  const path: Vector2D[] = [];
+  for (let i = 0; i < PATH_POINTS; i++) {
+    const t = i / (PATH_POINTS - 1);
+    const z = start.y + (finish.y - start.y) * t;
+    const baseX = start.x + (finish.x - start.x) * t;
+    const wander = i === 0 || i === PATH_POINTS - 1 ? 0 : randRange(rng, -width * 0.18, width * 0.18);
+    path.push({ x: clamp(baseX + wander, -width / 2 + 4, width / 2 - 4), y: z });
   }
 
-  const { cumLen, loopLength } = buildArcLengths(loop);
+  // Start grid across X at the start line.
+  const startGrid: Vector2D[] = [];
+  const spread = 6;
+  for (let i = 0; i < RACER_COUNT; i++) {
+    const frac = (RACER_COUNT as number) === 1 ? 0 : i / (RACER_COUNT - 1) - 0.5;
+    startGrid.push({ x: start.x + frac * 2 * spread, y: start.y });
+  }
 
-  const partial: Pick<Track, "loop" | "cumLen" | "loopLength"> = {
-    loop,
-    cumLen,
-    loopLength,
-  };
+  const elevation: ElevationField = { theme, seed, ...tp.elevation };
 
-  const startGrid = buildStartGrid(partial, laneHalfWidth);
-  const obstacles = scatterObstacles(rng, partial, laneHalfWidth, trackHalfWidth);
+  const rocks = scatterRocks(rng, tp, { path, start, finish, width, length });
 
   return {
     seed,
+    theme,
+    name: THEME_NAMES[theme],
     width,
-    height,
-    loop,
-    cumLen,
-    loopLength,
-    laneHalfWidth,
-    trackHalfWidth,
+    length,
+    start,
+    finish,
+    finishRadius: FINISH_RADIUS,
+    path,
     startGrid,
-    obstacles,
-    ripple: {
-      angle: randRange(rng, 0, Math.PI),
-      spacing: randRange(rng, 26, 40),
-    },
+    rocks,
+    seaLevelY: SEA_LEVEL_Y,
+    elevation,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Arc-length tables
-// ---------------------------------------------------------------------------
-
-/** cumLen has LOOP_POINTS + 1 entries; cumLen[n] = loopLength (closing seg). */
-function buildArcLengths(loop: Vector2D[]): {
-  cumLen: number[];
-  loopLength: number;
-} {
-  const n = loop.length;
-  const cumLen = new Array<number>(n + 1);
-  cumLen[0] = 0;
-  for (let i = 0; i < n; i++) {
-    const a = loop[i];
-    const b = loop[(i + 1) % n];
-    cumLen[i + 1] = cumLen[i] + V.dist(a, b);
+function scatterRocks(
+  rng: Rng,
+  tp: ThemeParams,
+  ctx: { path: Vector2D[]; start: Vector2D; finish: Vector2D; width: number; length: number },
+): Rock[] {
+  const rocks: Rock[] = [];
+  const count = randInt(rng, tp.rockCount[0], tp.rockCount[1]);
+  for (let i = 0; i < count; i++) {
+    const z = randRange(rng, 14, ctx.length - 14);
+    const x = randRange(rng, -ctx.width / 2 + 2, ctx.width / 2 - 2);
+    const pos = { x, y: z };
+    // Keep the immediate start/finish clear.
+    if (V.dist(pos, ctx.start) < 8 || V.dist(pos, ctx.finish) < 8) continue;
+    rocks.push({
+      pos,
+      radius: randRange(rng, tp.rockRadius[0], tp.rockRadius[1]),
+      height: randRange(rng, tp.rockHeight[0], tp.rockHeight[1]),
+    });
   }
-  return { cumLen, loopLength: cumLen[n] };
+  return rocks;
 }
 
 // ---------------------------------------------------------------------------
-// Loop geometry (reused by friction, AI, collision, engine, rendering)
+// Terrain height
 // ---------------------------------------------------------------------------
 
-export interface LoopProjection {
-  /** Parameter along the loop, t in [0,1). */
-  t: number;
-  /** Signed lateral offset from the centerline (left of travel = positive). */
-  lateral: number;
-  /** Forward unit tangent at the nearest point. */
-  tangent: Vector2D;
-  /** Nearest point on the centerline. */
-  point: Vector2D;
+/** Deterministic terrain height (world Y) at a ground point. */
+export function heightAt(track: Track, x: number, z: number): number {
+  const e = track.elevation;
+  let h = e.slope * (z / track.length);
+  // Rolling dunes.
+  h +=
+    e.amp *
+    (Math.sin(x * e.freq + e.seed * 0.013) * 0.5 +
+      Math.sin(z * e.freq * 0.8 + e.seed * 0.021) * 0.5);
+  // Seaward cliff rising toward the +X edge.
+  if (e.cliffAmp > 0) {
+    const edge = x / (track.width / 2); // -1..1
+    const t = Math.max(0, (edge - 0.35) / 0.65);
+    h += e.cliffAmp * t * t;
+  }
+  return h;
 }
 
-type LoopLike = Pick<Track, "loop" | "cumLen" | "loopLength">;
+// ---------------------------------------------------------------------------
+// Path geometry (open polyline start→finish)
+// ---------------------------------------------------------------------------
 
-/** Project a point onto the loop: nearest centerline point + param + offset. */
-export function nearestOnLoop(track: LoopLike, p: Vector2D): LoopProjection {
-  const { loop, cumLen, loopLength } = track;
-  const n = loop.length;
-  let best = { d2: Infinity, i: 0, s: 0, pt: loop[0] };
+function pathLengths(path: Vector2D[]): { cum: number[]; total: number } {
+  const cum = [0];
+  for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + V.dist(path[i - 1], path[i]));
+  return { cum, total: cum[cum.length - 1] };
+}
 
-  for (let i = 0; i < n; i++) {
-    const a = loop[i];
-    const b = loop[(i + 1) % n];
+/** Project a point onto the course path → progress fraction 0..1 toward finish. */
+export function progressAlongPath(track: Track, pos: Vector2D): number {
+  const { path } = track;
+  const { cum, total } = pathLengths(path);
+  let best = { d2: Infinity, arc: 0 };
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
     const ab = V.sub(b, a);
     const len2 = V.lenSq(ab);
-    const s = len2 > 0 ? clamp(V.dot(V.sub(p, a), ab) / len2, 0, 1) : 0;
+    const s = len2 > 0 ? clamp(V.dot(V.sub(pos, a), ab) / len2, 0, 1) : 0;
     const pt = V.add(a, V.scale(ab, s));
-    const d2 = V.distSq(p, pt);
-    if (d2 < best.d2) best = { d2, i, s, pt };
+    const d2 = V.distSq(pos, pt);
+    if (d2 < best.d2) best = { d2, arc: cum[i] + s * (cum[i + 1] - cum[i]) };
   }
-
-  const a = loop[best.i];
-  const b = loop[(best.i + 1) % n];
-  const tangent = V.normalize(V.sub(b, a));
-  const arc = cumLen[best.i] + best.s * (cumLen[best.i + 1] - cumLen[best.i]);
-  const leftNormal = V.perp(tangent); // (-ty, tx)
-  const lateral = V.dot(V.sub(p, best.pt), leftNormal);
-
-  return { t: loopLength > 0 ? arc / loopLength : 0, lateral, tangent, point: best.pt };
+  return total > 0 ? best.arc / total : 0;
 }
 
-/** Centerline position at parameter t (wraps). */
-export function loopPointAt(track: LoopLike, t: number): Vector2D {
-  const { loop, cumLen, loopLength } = track;
-  const n = loop.length;
-  const arc = (((t % 1) + 1) % 1) * loopLength;
-  for (let i = 0; i < n; i++) {
-    if (arc >= cumLen[i] && arc < cumLen[i + 1]) {
-      const seg = cumLen[i + 1] - cumLen[i];
-      const s = seg > 0 ? (arc - cumLen[i]) / seg : 0;
-      return V.lerp(loop[i], loop[(i + 1) % n], s);
+/** A point on the path at progress fraction t (0..1). */
+export function pathPointAt(track: Track, t: number): Vector2D {
+  const { path } = track;
+  const { cum, total } = pathLengths(path);
+  const arc = clamp(t, 0, 1) * total;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (arc <= cum[i + 1]) {
+      const seg = cum[i + 1] - cum[i];
+      const s = seg > 0 ? (arc - cum[i]) / seg : 0;
+      return V.lerp(path[i], path[i + 1], s);
     }
   }
-  return { ...loop[0] };
+  return { ...path[path.length - 1] };
 }
 
-/** Forward unit tangent at parameter t (wraps). */
-export function tangentAt(track: LoopLike, t: number): Vector2D {
-  const { loop, cumLen, loopLength } = track;
-  const n = loop.length;
-  const arc = (((t % 1) + 1) % 1) * loopLength;
-  for (let i = 0; i < n; i++) {
-    if (arc >= cumLen[i] && arc < cumLen[i + 1]) {
-      return V.normalize(V.sub(loop[(i + 1) % n], loop[i]));
-    }
-  }
-  return V.normalize(V.sub(loop[1], loop[0]));
+/** True if the marble has crossed into the finish zone. */
+export const atFinish = (track: Track, pos: Vector2D): boolean =>
+  V.dist(pos, track.finish) <= track.finishRadius;
+
+/** True if the marble has left the playable beach (sides / ends). */
+export function isOffCourse(track: Track, pos: Vector2D): boolean {
+  const m = 1;
+  return (
+    Math.abs(pos.x) > track.width / 2 + m ||
+    pos.y < -m ||
+    pos.y > track.length + m
+  );
 }
-
-/** Absolute lateral distance from the centerline. */
-export const offsetFromCenter = (track: Track, pos: Vector2D): number =>
-  Math.abs(nearestOnLoop(track, pos).lateral);
-
-/** Progress for standings (loop parameter; lap tracked separately). */
-export const progressFor = (track: Track, pos: Vector2D): number =>
-  nearestOnLoop(track, pos).t;
-
-/** True if the marble has gone beyond a berm bank (channel edge). */
-export const isPastBerm = (track: Track, pos: Vector2D): boolean =>
-  offsetFromCenter(track, pos) > track.trackHalfWidth;
-
-/** Safety bound: marble has left the board entirely. */
-export const isOffBoard = (track: Track, pos: Vector2D): boolean =>
-  pos.x < 0 || pos.y < 0 || pos.x > track.width || pos.y > track.height;
-
-// ---------------------------------------------------------------------------
-// Start grid + obstacles
-// ---------------------------------------------------------------------------
-
-function buildStartGrid(track: LoopLike, laneHalfWidth: number): Vector2D[] {
-  const baseT = 0.02; // just past the finish line (t = 0)
-  const center = loopPointAt(track, baseT);
-  const tangent = tangentAt(track, baseT);
-  const leftNormal = V.perp(tangent);
-  const spread = laneHalfWidth * 0.7;
-  const grid: Vector2D[] = [];
-  for (let i = 0; i < RACER_COUNT; i++) {
-    const frac = (RACER_COUNT as number) === 1 ? 0 : i / (RACER_COUNT - 1) - 0.5;
-    grid.push(V.add(center, V.scale(leftNormal, frac * 2 * spread)));
-  }
-  return grid;
-}
-
-function scatterObstacles(
-  rng: Rng,
-  track: LoopLike,
-  laneHalfWidth: number,
-  trackHalfWidth: number,
-): Obstacle[] {
-  const obstacles: Obstacle[] = [];
-  const count = randInt(rng, 5, 8);
-  for (let i = 0; i < count; i++) {
-    // Avoid the start/finish stretch (t near 0 / 1).
-    const t = randRange(rng, 0.1, 0.9);
-    const center = loopPointAt(track, t);
-    const leftNormal = V.perp(tangentAt(track, t));
-    const lateral = randRange(rng, -trackHalfWidth * 0.9, trackHalfWidth * 0.9);
-    const pos = V.add(center, V.scale(leftNormal, lateral));
-
-    if (rng() < 0.5) {
-      obstacles.push({
-        kind: "driftwood",
-        pos,
-        halfW: randRange(rng, 22, 38),
-        halfH: randRange(rng, 9, 15),
-        angle: randRange(rng, -Math.PI / 2, Math.PI / 2),
-      });
-    } else {
-      obstacles.push({
-        kind: "kelp",
-        pos,
-        radius: randRange(rng, 16, 26),
-      });
-    }
-  }
-  // keep laneHalfWidth referenced for future tuning of obstacle bias
-  void laneHalfWidth;
-  return obstacles;
-}
-
-// ---------------------------------------------------------------------------
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;

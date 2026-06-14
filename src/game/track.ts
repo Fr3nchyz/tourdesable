@@ -204,7 +204,7 @@ function buildStartGrid(track: LoopLike, laneHalfWidth: number): Vector2D[] {
   const spread = laneHalfWidth * 0.7;
   const grid: Vector2D[] = [];
   for (let i = 0; i < RACER_COUNT; i++) {
-    const frac = RACER_COUNT === 1 ? 0 : i / (RACER_COUNT - 1) - 0.5;
+    const frac = (RACER_COUNT as number) === 1 ? 0 : i / (RACER_COUNT - 1) - 0.5;
     grid.push(V.add(center, V.scale(leftNormal, frac * 2 * spread)));
   }
   return grid;

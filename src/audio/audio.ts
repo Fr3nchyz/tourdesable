@@ -52,6 +52,24 @@ export class AudioEngine {
     }
   }
 
+  /** Soft low "thud" when a marble is deflected by a berm bank. */
+  thud(): void {
+    if (this.muted || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    gain.connect(this.ctx.destination);
+    const osc = this.ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(60, t + 0.2);
+    osc.connect(gain);
+    osc.start(t);
+    osc.stop(t + 0.24);
+  }
+
   /** Start the swelling ocean loop (rogue-wave warning). */
   startOcean(): void {
     if (this.muted || !this.ctx || this.oceanSrc) return;

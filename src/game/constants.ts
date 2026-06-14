@@ -78,3 +78,11 @@ export const SCREEN_SHAKE_PX = 2;
 // --- Racer roster ---
 export const RACER_COUNT = 4; // 1 human + 3 bots
 export const RACER_COLORS = ["#e63946", "#457b9d", "#f4a261", "#2a9d8f"];
+
+// --- 3D world mapping ---
+/** Board px -> world units. Board ~1200 => ~60 world units across. */
+export const WORLD_SCALE = 0.05;
+/** Visual berm height in world units (low banks the marble can clear). */
+export const BERM_HEIGHT = 1.1;
+/** Visual depth the channel floor sits below the surrounding sand. */
+export const CHANNEL_DEPTH = 0.35;

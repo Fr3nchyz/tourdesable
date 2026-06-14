@@ -215,6 +215,8 @@ function updateLapAndFinish(
 
   r.loopT = t;
   r.progress = r.lap + t;
+  // Add a check to prevent a racer from finishing multiple times
+  if (r.state === "finished") return false;
   return false;
 }
 

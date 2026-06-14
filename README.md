@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tour de Sable 🏖️
 
-## Getting Started
+Local, single-player, turn-based 2D physics marble racing — an homage to childhood
+beach marble-cyclist racing on the Brittany coast (the Blancs-Sablons flatlands).
 
-First, run the development server:
+Built with **Next.js (App Router) + TypeScript + Tailwind**. All physics run natively
+in TypeScript on an HTML5 Canvas. No backend, no database — it initialises on run.
+
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
+npm test         # Vitest unit suite (physics / AI / collisions / waves)
+npm run build    # production build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How to play
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. **Lobby** — three randomized track seeds are shown as thumbnails. Click one.
+2. **Flick** — on your turn, drag *backwards* from your marble (slingshot) to set
+   direction + power, then release to launch. Heavy sand drag bleeds your speed.
+3. Outrun 3 AI bots (drawn from 6 archetypes) to the finish line at the top.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Mechanics
+- **Friction zones** — racing lane (fast), dry shoulder (2× drag), kelp (instant stop).
+- **Pocket-Stealer Shunt** — ram a stopped marble: 70% of your speed transfers to it
+  (shoving it to the shoulder) while you stop dead in its vacated pocket.
+- **Driftwood** bounces elastically; **wind ripples** speed you up along them, wobble
+  you across them.
+- **Rogue Wave** — from round 3, a 20% chance the Blancs-Sablons Surge sweeps the lower
+  track, shoving marbles back and leaving 2 rounds of near-frictionless waterlogged sand.
+- **Out of bounds** = tipped over: miss a turn, respawn at the ledge (mini-golf reset).
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/game/      Pure, headless, unit-tested simulation (no DOM)
+  vector, rng, track, friction, physics, collision, ai, wave, stateMachine, engine
+src/render/    Canvas drawing: renderer, trails, particles, effects
+src/audio/     Procedural WebAudio (clink + ocean), no asset files
+src/components/ React shell: GameCanvas (rAF loop + input), LobbyVote, HUD, VictoryScreen
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The game logic is fully decoupled from React so physics/AI/collisions are testable in
+isolation; React is a thin shell that mounts the canvas, runs the animation loop, draws
+the phase UI, and forwards pointer input.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 6 AI archetypes
+Bully (rams nearest), Sniper (precise, kelp-avoidant), Beach-Comber (erratic),
+Navigator (adaptive: snipes while leading, bullies while trailing),
+Coast-Glider (rides low-friction lines), Daredevil (always full power).

@@ -24,3 +24,63 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---- tour-de-sable diorama styling ---- */
+
+/* 2.5D tabletop look. NOTE: we deliberately avoid a 3D rotateX here — a real
+   3D transform breaks the linear client->canvas coordinate mapping that the
+   drag-to-flick input relies on. A uniform scale preserves correct hit-testing
+   while the DOF blur bands + drop shadow + vignette still sell the miniature
+   diorama feel. */
+.diorama {
+  perspective: none;
+}
+.diorama-board {
+  position: relative;
+  transform: scale(0.96);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
+  border-radius: 10px;
+  overflow: hidden;
+}
+/* Soft vignette to push the eye toward the sharp track centre. */
+.diorama-board::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  box-shadow: inset 0 0 120px 30px rgba(40, 30, 10, 0.35);
+}
+
+/* Depth-of-field bands: blur distant cliffs (top 15%) + foreground (bottom 10%)
+   while the active track stays sharp — the miniature/tilt-shift look. */
+.dof-top,
+.dof-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 5;
+}
+.dof-top {
+  top: 0;
+  height: 15%;
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}
+.dof-bottom {
+  bottom: 0;
+  height: 10%;
+  -webkit-mask-image: linear-gradient(to top, black 55%, transparent);
+  mask-image: linear-gradient(to top, black 55%, transparent);
+}
+
+.rumble {
+  animation: rumble 0.12s linear;
+}
+@keyframes rumble {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(1px, -1px); }
+}

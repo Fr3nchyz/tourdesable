@@ -13,19 +13,19 @@ import { RACER_COUNT, THEMES } from "./constants";
 
 describe("track generation", () => {
   it("is deterministic for the same seed + theme", () => {
-    const a = generateTrack(777, "blancs-sablons");
-    const b = generateTrack(777, "blancs-sablons");
+    const a = generateTrack(777, "trez-hir");
+    const b = generateTrack(777, "trez-hir");
     expect(a).toEqual(b);
   });
 
   it("different seeds produce different paths", () => {
-    const a = generateTrack(1, "blancs-sablons");
-    const b = generateTrack(2, "blancs-sablons");
+    const a = generateTrack(1, "trez-hir");
+    const b = generateTrack(2, "trez-hir");
     expect(a.path).not.toEqual(b.path);
   });
 
   it("different themes produce different elevation params", () => {
-    const flat = generateTrack(42, "blancs-sablons");
+    const flat = generateTrack(42, "trez-hir");
     const cliff = generateTrack(42, "bertheaume");
     expect(flat.elevation.cliffAmp).toBe(0);
     expect(cliff.elevation.cliffAmp).toBeGreaterThan(0);
@@ -56,8 +56,8 @@ describe("track generation", () => {
 });
 
 describe("heightAt", () => {
-  it("blancs-sablons stays nearly flat (small amplitude)", () => {
-    const t = generateTrack(1, "blancs-sablons");
+  it("trez-hir stays nearly flat (small amplitude)", () => {
+    const t = generateTrack(1, "trez-hir");
     const heights: number[] = [];
     for (let x = -20; x <= 20; x += 5)
       for (let z = 0; z <= 90; z += 10)
@@ -66,8 +66,8 @@ describe("heightAt", () => {
     expect(range).toBeLessThan(6);
   });
 
-  it("bertheaume has much larger elevation range than blancs-sablons", () => {
-    const flat = generateTrack(1, "blancs-sablons");
+  it("bertheaume has much larger elevation range than trez-hir", () => {
+    const flat = generateTrack(1, "trez-hir");
     const cliff = generateTrack(1, "bertheaume");
     const sampleH = (track: typeof flat) => {
       let lo = Infinity, hi = -Infinity;
@@ -107,7 +107,7 @@ describe("progressAlongPath", () => {
 });
 
 describe("pathPointAt", () => {
-  const t = generateTrack(7, "blancs-sablons");
+  const t = generateTrack(7, "trez-hir");
 
   it("t=0 returns a point near the start", () => {
     const p = pathPointAt(t, 0);
@@ -121,7 +121,7 @@ describe("pathPointAt", () => {
 });
 
 describe("atFinish / isOffCourse", () => {
-  const t = generateTrack(42, "blancs-sablons");
+  const t = generateTrack(42, "trez-hir");
 
   it("finish zone detects marbles at the finish", () => {
     expect(atFinish(t, t.finish)).toBe(true);

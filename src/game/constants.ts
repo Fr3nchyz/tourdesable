@@ -9,16 +9,16 @@ export const RACER_COUNT = 4; // 1 human + 3 bots
 export const RACER_COLORS = ["#e63946", "#457b9d", "#f4a261", "#2a9d8f"];
 
 // --- Marble (rigid body) ---
-export const MARBLE_RADIUS = 0.8;
-/** Sand drag: heavy linear/angular damping so marbles roll then settle. */
-export const MARBLE_LINEAR_DAMPING = 1.7;
-export const MARBLE_ANGULAR_DAMPING = 1.6;
+export const MARBLE_RADIUS = 0.45;
+/** Sand drag: linear damping so marbles roll then settle. */
+export const MARBLE_LINEAR_DAMPING = 0.7;
+export const MARBLE_ANGULAR_DAMPING = 0.7;
 export const MARBLE_FRICTION = 0.9;
 export const MARBLE_RESTITUTION = 0.35;
 
 // --- Flick / launch ---
 /** Impulse magnitude at 100% power. */
-export const MAX_IMPULSE = 9;
+export const MAX_IMPULSE = 17;
 /** Drag distance (world metres) that maps to 100% power. */
 export const MAX_DRAG_WORLD = 12;
 
@@ -32,7 +32,7 @@ export const MAX_SETTLE_MS = 7000;
 
 // --- Physics world ---
 /** Gentle gravity: slopes influence the marble, damping prevents runaway. */
-export const GRAVITY = -7;
+export const GRAVITY = -20;
 
 // --- Surface displacement engine (material-driven sand feel) ---
 // surface.ts samples these each frame and pushes effective damping / lateral
@@ -42,23 +42,23 @@ import type { SurfaceMaterial } from "./types";
 
 /** Dry beach sand (Blancs-Sablons primary). */
 export const SAND_MATERIAL: SurfaceMaterial = {
-  baseFriction: 1.7,
-  grainResistance: 0.5,
+  baseFriction: 0.7,
+  grainResistance: 0.4,
   deformationFactor: 0.5,
 };
 
 /** "Sink-to-stop": extra damping added as speed→0 (the settling "thud"). */
-export const SINK_GAIN = 2.6;
+export const SINK_GAIN = 1.0;
 /** Speed (m/s) e-fold of the sink ramp — smaller = thud closer to rest. */
 export const SINK_SCALE = 1.1;
 /** Half-width (m) of the cambered racing lane; |x| beyond this is shoulder. */
-export const LANE_HALF_WIDTH = 9;
+export const LANE_HALF_WIDTH = 5;
 
 // Grain variance: low-frequency Perlin noise so no two patches feel identical.
 /** Spatial frequency of the grain noise (cycles per metre). */
 export const GRAIN_FREQ = 0.09;
 /** Lateral micro-wobble force scale (× speed) from the grain field. */
-export const WOBBLE_GAIN = 0.05;
+export const WOBBLE_GAIN = 0.008;
 /** Below this speed (m/s) grain wobble is suppressed (settle-safe). */
 export const WOBBLE_MIN_SPEED = 0.45;
 
@@ -71,7 +71,7 @@ export const TRAIL_WIDTH = 1.6;
 // Camber: the lane crowns at the centre, so an imprecise launch drifts to a
 // shoulder. Modelled as a speed-scaled lateral force ∝ offset from lane centre.
 /** Lateral camber force scale (× normalised offset × speed). */
-export const CAMBER_GAIN = 0.045;
+export const CAMBER_GAIN = 0;
 /** Below this speed (m/s) camber is suppressed (settle-safe). */
 export const CAMBER_MIN_SPEED = 0.3;
 
@@ -82,8 +82,8 @@ export const TENSION_THRESHOLD = 0.82;
 export const TENSION_JITTER = 0.14;
 
 // --- Course (metres) ---
-export const COURSE_WIDTH = 44;
-export const COURSE_LENGTH = 92;
+export const COURSE_WIDTH = 18;
+export const COURSE_LENGTH = 190;
 /** Distance from the finish point that counts as crossing the line. */
 export const FINISH_RADIUS = 4.5;
 /** Marbles below this Y have fallen off the coast (into the sea) → reset. */
@@ -98,11 +98,11 @@ export const SAND_BURST_MIN = 8;
 export const SAND_BURST_MAX = 14;
 
 // --- Map themes ---
-export const THEMES = ["blancs-sablons", "le-minou", "bertheaume"] as const;
+export const THEMES = ["trez-hir", "le-minou", "bertheaume"] as const;
 export type Theme = (typeof THEMES)[number];
 
 export const THEME_NAMES: Record<Theme, string> = {
-  "blancs-sablons": "Les Blancs-Sablons",
+  "trez-hir": "Trez-Hir",
   "le-minou": "Le Minou",
   bertheaume: "Bertheaume",
 };

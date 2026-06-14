@@ -16,31 +16,36 @@ import {
   type Theme,
 } from "./constants";
 
-const PATH_POINTS = 9;
+const PATH_POINTS = 13;
 
 interface ThemeParams {
   elevation: Omit<ElevationField, "theme" | "seed">;
+  /** Path wander as a fraction of course width — higher = more S-curves. */
+  wander: number;
   rockCount: [number, number];
   rockRadius: [number, number];
   rockHeight: [number, number];
 }
 
 const THEME_PARAMS: Record<Theme, ThemeParams> = {
-  "blancs-sablons": {
+  "trez-hir": {
     elevation: { amp: 0.35, freq: 0.14, cliffAmp: 0, slope: 1 },
-    rockCount: [2, 4],
+    wander: 0.40,
+    rockCount: [4, 7],
     rockRadius: [0.8, 1.6],
     rockHeight: [0.6, 1.2],
   },
   "le-minou": {
     elevation: { amp: 0.9, freq: 0.17, cliffAmp: 1.6, slope: 2.5 },
-    rockCount: [4, 7],
+    wander: 0.50,
+    rockCount: [6, 10],
     rockRadius: [1.0, 2.2],
     rockHeight: [1.0, 2.4],
   },
   bertheaume: {
-    elevation: { amp: 1.7, freq: 0.2, cliffAmp: 6, slope: 4.5 },
-    rockCount: [7, 11],
+    elevation: { amp: 2.6, freq: 0.2, cliffAmp: 9, slope: 5 },
+    wander: 0.50,
+    rockCount: [10, 15],
     rockRadius: [1.4, 3.2],
     rockHeight: [2.0, 5.0],
   },
@@ -62,13 +67,13 @@ export function generateTrack(seed: number, theme: Theme): Track {
     const t = i / (PATH_POINTS - 1);
     const z = start.y + (finish.y - start.y) * t;
     const baseX = start.x + (finish.x - start.x) * t;
-    const wander = i === 0 || i === PATH_POINTS - 1 ? 0 : randRange(rng, -width * 0.18, width * 0.18);
-    path.push({ x: clamp(baseX + wander, -width / 2 + 4, width / 2 - 4), y: z });
+    const wander = i === 0 || i === PATH_POINTS - 1 ? 0 : randRange(rng, -width * tp.wander, width * tp.wander);
+    path.push({ x: clamp(baseX + wander, -width / 2 + 2, width / 2 - 2), y: z });
   }
 
   // Start grid across X at the start line.
   const startGrid: Vector2D[] = [];
-  const spread = 6;
+  const spread = 3;
   for (let i = 0; i < RACER_COUNT; i++) {
     const frac = (RACER_COUNT as number) === 1 ? 0 : i / (RACER_COUNT - 1) - 0.5;
     startGrid.push({ x: start.x + frac * 2 * spread, y: start.y });
@@ -136,6 +141,22 @@ export function heightAt(track: Track, x: number, z: number): number {
     const t = Math.max(0, (edge - 0.35) / 0.65);
     h += e.cliffAmp * t * t;
   }
+  // Carved beach path: channel depression along the centerline, pushed-up berms
+  // just outside it, and high-frequency micro-bumps for a hand-crafted sand feel.
+  const pathPt = pathPointAt(track, z / track.length);
+  const dx = x - pathPt.x;
+  const absDx = Math.abs(dx);
+  const channelHW = 5;
+  if (absDx < channelHW) {
+    const t = dx / channelHW;
+    h -= 0.4 * (1 - t * t); // parabolic channel scoop
+  }
+  const bermEnd = channelHW + 4;
+  if (absDx >= channelHW && absDx < bermEnd) {
+    const bt = (absDx - channelHW) / 4;
+    h += 0.5 * bt * (1 - bt) * 4; // smooth berm shoulder
+  }
+  h += 0.12 * Math.sin(x * 3.1 + z * 2.3 + e.seed * 0.07); // micro-bumps
   return h;
 }
 

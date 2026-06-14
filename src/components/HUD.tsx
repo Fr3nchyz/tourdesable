@@ -7,11 +7,13 @@ export default function HUD({
   muted,
   onToggleMute,
   onRecenter,
+  onMenu,
 }: {
   state: GameState;
   muted: boolean;
   onToggleMute: () => void;
   onRecenter: () => void;
+  onMenu: () => void;
 }) {
   const standings = [...state.racers].sort((a, b) => b.progress - a.progress);
   const active = state.racers.find(
@@ -74,6 +76,13 @@ export default function HUD({
           className="pointer-events-auto rounded-lg bg-black/55 px-3 py-2 font-mono text-sm text-amber-50 backdrop-blur hover:bg-black/70"
         >
           {muted ? "🔇" : "🔊"}
+        </button>
+        <button
+          onClick={onMenu}
+          className="pointer-events-auto rounded-lg bg-black/55 px-3 py-2 font-mono text-sm text-amber-50 backdrop-blur hover:bg-black/70"
+          title="Menu (Esc)"
+        >
+          ☰
         </button>
       </div>
     </div>

@@ -11,7 +11,7 @@
 
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { RigidBody } from "@react-three/rapier";
+import { RigidBody, CylinderCollider, BallCollider } from "@react-three/rapier";
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { Racer, Track, TrailSegment, Vector2D } from "@/game/types";
 import { heightAt } from "@/game/track";
@@ -136,23 +136,21 @@ function ActiveMarble({
   return (
     <RigidBody
       ref={rbRef}
-      colliders="ball"
+      colliders={false}
       position={[spawnX, spawnY, spawnZ]}
       linearDamping={MARBLE_LINEAR_DAMPING}
       angularDamping={MARBLE_ANGULAR_DAMPING}
       friction={MARBLE_FRICTION}
       restitution={MARBLE_RESTITUTION}
     >
-      <mesh castShadow>
-        <sphereGeometry args={[MARBLE_RADIUS, 32, 32]} />
-        <meshStandardMaterial
-          color={racer.color}
-          roughness={0.15}
-          metalness={0.35}
-          emissive={racer.color}
-          emissiveIntensity={0.08}
-        />
-      </mesh>
+      <BallCollider args={[MARBLE_RADIUS]} />
+      <group
+        position={[0, -MARBLE_RADIUS + 0.05, 0]}
+        rotation={[0, facingFinish(racer.pos, track.finish), 0]}
+        scale={0.9}
+      >
+        <Cyclist color={racer.color} />
+      </group>
     </RigidBody>
   );
 }
@@ -175,6 +173,7 @@ function facingFinish(pos: Vector2D, finish: Vector2D): number {
 export interface Racers3DProps {
   racers: Racer[];
   activeId: string;
+  marbleKey: string;
   track: Track;
   trails: TrailSegment[];
   impulseRef: React.RefObject<Impulse3D | null>;
@@ -191,6 +190,7 @@ export interface Racers3DProps {
 export default function Racers3D({
   racers,
   activeId,
+  marbleKey,
   track,
   trails,
   impulseRef,
@@ -202,10 +202,11 @@ export default function Racers3D({
 
   return (
     <group>
-      {/* Active racer: Rapier rigid body.  key=activeId remounts on turn change. */}
+      {/* Active racer: remounts on every turn via marbleKey (round+activeTurn),
+          ensuring fresh Rapier body and reset refs each shot. */}
       {active && (
         <ActiveMarble
-          key={activeId}
+          key={marbleKey}
           racer={active}
           track={track}
           trails={trails}
@@ -216,7 +217,7 @@ export default function Racers3D({
         />
       )}
 
-      {/* Idle racers: Cyclist figurines on the terrain. */}
+      {/* Idle racers: Cyclist figurines with physics cylinders so the marble collides. */}
       {racers
         .filter((r) => r.id !== activeId && r.state !== "finished")
         .map((r) => {
@@ -224,13 +225,24 @@ export default function Racers3D({
           const z = r.pos.y;
           const y = heightAt(track, x, z);
           return (
-            <group
-              key={r.id}
-              position={[x, y, z]}
-              rotation={[0, facingFinish(r.pos, track.finish), 0]}
-              scale={r.state === "tipped" ? 0.85 : 0.9}
-            >
-              <Cyclist color={r.color} />
+            <group key={r.id}>
+              {/* Collision body — remounts when the racer moves to a new position */}
+              <RigidBody
+                key={`col-${r.id}-${x.toFixed(1)}-${z.toFixed(1)}`}
+                type="fixed"
+                position={[x, y + 0.9, z]}
+                colliders={false}
+              >
+                <CylinderCollider args={[0.85, 0.42]} />
+              </RigidBody>
+              {/* Visual */}
+              <group
+                position={[x, y, z]}
+                rotation={[0, facingFinish(r.pos, track.finish), 0]}
+                scale={r.state === "tipped" ? 0.85 : 0.9}
+              >
+                <Cyclist color={r.color} />
+              </group>
             </group>
           );
         })}

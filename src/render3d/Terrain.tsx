@@ -13,11 +13,11 @@ import type { Track } from "@/game/types";
 import { heightAt } from "@/game/track";
 
 // Grid resolution: more rows (Z) than cols (X) since the course is longer.
-const COLS = 45; // vertices along X (course width)
-const ROWS = 93; // vertices along Z (course length)
+const COLS = 20; // vertices along X (course width)
+const ROWS = 192; // vertices along Z (course length)
 
 const TEX_SIZE = 512;
-const REPEAT = 8;
+const REPEAT = 12;
 
 // --- procedural sand texture (same approach as SandGround) ------------------
 
@@ -114,7 +114,13 @@ function buildTerrain(track: Track): TerrainData {
     for (let col = 0; col < COLS; col++) {
       const x = -track.width / 2 + (col / (COLS - 1)) * track.width;
       const z = (row / (ROWS - 1)) * track.length;
-      const y = heightAt(track, x, z);
+      let y = heightAt(track, x, z);
+      // Raised sand berms on the left and right edges — natural pushed-up sand look.
+      const edgeCol = Math.min(col, COLS - 1 - col); // 0 at edges, increases inward
+      if (edgeCol === 0) y += 2.0;
+      else if (edgeCol === 1) y += 1.2;
+      else if (edgeCol === 2) y += 0.6;
+      else if (edgeCol === 3) y += 0.2;
       const vi = row * COLS + col;
       vertices[vi * 3]     = x;
       vertices[vi * 3 + 1] = y;

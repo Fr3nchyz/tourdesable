@@ -86,6 +86,25 @@ function spawnRacers(track: Track, rng: () => number): Racer[] {
   return racers;
 }
 
+/** Restart the current track with a fresh grid (no lobby). */
+export function restartCurrentTrack(state: GameState): GameState {
+  const track = state.track!;
+  const rng = mulberry32((Date.now()) >>> 0);
+  const racers = spawnRacers(track, rng);
+  return {
+    ...state,
+    phase: "TURN_CYCLE",
+    turnSubPhase: "INPUT",
+    racers,
+    turnOrder: racers.map((r) => r.id),
+    activeTurn: 0,
+    round: 1,
+    winnerId: null,
+    finishedCount: 0,
+    trails: [],
+  };
+}
+
 /** Select a lobby course, spawn the grid, begin the first turn. */
 export function selectTrack(state: GameState, index: number): GameState {
   const track = state.lobbyTracks[index];

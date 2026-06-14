@@ -37,9 +37,11 @@ export interface SceneProps {
   track: Track;
   racers: Racer[];
   activeId: string;
+  marbleKey: string;
   trails: TrailSegment[];
   inPhysics: boolean;
   aim: AimState | null;
+  isAiming: boolean;
   impulseRef: React.RefObject<Impulse3D | null>;
   recenterRef: React.RefObject<boolean>;
   onRacerPos: (id: string, wx: number, wy: number, wz: number) => "finish" | "offcourse" | "ok";
@@ -104,9 +106,11 @@ export default function Scene({
   track,
   racers,
   activeId,
+  marbleKey,
   trails,
   inPhysics,
   aim,
+  isAiming,
   impulseRef,
   recenterRef,
   onRacerPos,
@@ -154,6 +158,7 @@ export default function Scene({
         <Racers3D
           racers={racers}
           activeId={activeId}
+          marbleKey={marbleKey}
           track={track}
           trails={trails}
           impulseRef={impulseRef}
@@ -162,6 +167,18 @@ export default function Scene({
           onSettle={onSettle}
         />
       </Physics>
+
+      {/* ---- Environment planes (visual only, no physics) ---- */}
+      {/* Wide beach surround — flat sand at Y=0 so the terrain visibly rises above it */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -4, track.length / 2]} receiveShadow>
+        <planeGeometry args={[600, 600]} />
+        <meshStandardMaterial color="#e0cc96" roughness={0.95} metalness={0} />
+      </mesh>
+      {/* Sea plane — dark water on the +X flank (seaward side per cliff logic) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[160, -1.5, track.length / 2]}>
+        <planeGeometry args={[300, 600]} />
+        <meshStandardMaterial color="#2a7ca8" roughness={0.1} metalness={0.15} transparent opacity={0.82} />
+      </mesh>
 
       {/* Carved sand channels (persistent deformation layer) */}
       <Trails3D track={track} trails={trails} />
@@ -185,6 +202,7 @@ export default function Scene({
       <OrbitCamera
         target={active ? active.pos : { x: 0, y: track.length / 2 }}
         recenterRef={recenterRef}
+        isAiming={isAiming}
       />
 
       {/* Invisible flat plane at y=0 for flick raycasting. */}

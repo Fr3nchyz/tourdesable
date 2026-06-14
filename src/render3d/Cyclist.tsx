@@ -33,7 +33,7 @@ function Cyclist({ color, scale = 1 }: CyclistProps) {
       {([0.85, -0.85] as const).map((x) => (
         <group key={x} position={[x, wheelR, 0]}>
           {/* tyre */}
-          <mesh castShadow receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+          <mesh castShadow receiveShadow>
             <torusGeometry args={[wheelR, 0.07, 8, 20]} />
             <meshStandardMaterial color={TIRE} roughness={0.85} />
           </mesh>
@@ -101,14 +101,14 @@ function Cyclist({ color, scale = 1 }: CyclistProps) {
         <meshStandardMaterial color={color} roughness={0.6} />
       </mesh>
 
-      {/* hips / shorts */}
-      <mesh castShadow position={[-0.42, 1.1, 0]}>
+      {/* hips / shorts — on saddle */}
+      <mesh castShadow position={[-0.42, 0.98, 0]}>
         <sphereGeometry args={[0.24, 12, 10]} />
         <meshStandardMaterial color={TIRE} roughness={0.8} />
       </mesh>
 
-      {/* head + helmet, projecting forward over the bars */}
-      <group position={[0.42, 1.5, 0]}>
+      {/* head + helmet, tucked over the bars */}
+      <group position={[0.4, 1.55, 0]}>
         <mesh castShadow receiveShadow>
           <sphereGeometry args={[0.2, 14, 12]} />
           <meshStandardMaterial color={SKIN} roughness={0.7} />
@@ -122,13 +122,24 @@ function Cyclist({ color, scale = 1 }: CyclistProps) {
         </mesh>
       </group>
 
-      {/* arms: shoulder -> handlebars (mirrored on Z) */}
+      {/* torso: lean forward (-Z rotation tilts top toward +X / front) */}
+      <mesh
+        castShadow
+        receiveShadow
+        position={[0.0, 1.26, 0]}
+        rotation={[0, 0, -0.95]}
+      >
+        <capsuleGeometry args={[0.22, 0.5, 6, 12]} />
+        <meshStandardMaterial color={color} roughness={0.6} />
+      </mesh>
+
+      {/* arms: from shoulder (near torso top) down to handlebars (mirrored on Z) */}
       {([0.16, -0.16] as const).map((z) => (
         <mesh
           key={z}
           castShadow
-          position={[0.45, 1.32, z]}
-          rotation={[0, 0, -0.95]}
+          position={[0.6, 1.38, z]}
+          rotation={[0, 0, 0.8]}
         >
           <capsuleGeometry args={[0.06, 0.55, 4, 8]} />
           <meshStandardMaterial color={color} roughness={0.6} />

@@ -16,7 +16,7 @@ import { generateTrack } from "./track";
 import { SAND_MATERIAL, SINK_GAIN, TRAIL_LIFETIME } from "./constants";
 import type { GameState, TrailSegment } from "./types";
 
-const track = generateTrack(2024, "blancs-sablons");
+const track = generateTrack(2024, "trez-hir");
 
 describe("sinkToStop", () => {
   it("is near zero at launch speed", () => {

@@ -4,8 +4,8 @@ import type { Track } from "@/game/types";
 import type { Theme } from "@/game/constants";
 
 const THEME_META: Record<Theme, { desc: string; diff: string; color: string; emoji: string }> = {
-  "blancs-sablons": {
-    desc: "Wide flat dunes stretch to the horizon. Gentle rolls, forgiving sand.",
+  "trez-hir": {
+    desc: "Calm wide sands of the Crozon peninsula. Gentle rolls, forgiving dunes.",
     diff: "Easy",
     color: "#e9d8a6",
     emoji: "🏖️",
@@ -25,9 +25,9 @@ const THEME_META: Record<Theme, { desc: string; diff: string; color: string; emo
 };
 
 const DIFF_PIPS: Record<string, string> = {
-  Easy: "⬤⬜⬜",
-  Medium: "⬤⬤⬜",
-  Hard: "⬤⬤⬤",
+  Easy:   "●○○",
+  Medium: "●●○",
+  Hard:   "●●●",
 };
 
 function TrackCard({

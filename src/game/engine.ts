@@ -12,7 +12,7 @@ import * as V from "./vector";
 import { activeRacer, startNextTurn } from "./stateMachine";
 import { computeLaunch } from "./ai";
 import { mulberry32 } from "./rng";
-import { progressAlongPath, atFinish, isOffCourse } from "./track";
+import { progressAlongPath, pathPointAt, atFinish, isOffCourse } from "./track";
 import { MAX_IMPULSE, TRAIL_LIFETIME } from "./constants";
 
 /** 3D impulse vector passed to Rapier's applyImpulse. */
@@ -68,7 +68,13 @@ export function updateRacerPos(
   if (worldY < state.track!.seaLevelY || isOffCourse(state.track!, pos)) {
     r.state = "tipped";
     r.skipNextTurn = true;
-    r.pos = { ...r.lastInBoundsPos };
+    // Snap to the path centerline at the last safe progress so they respawn
+    // in the middle of the course rather than at the edge they fell off.
+    const safeProgress = progressAlongPath(state.track!, r.lastInBoundsPos);
+    const centerPos = pathPointAt(state.track!, safeProgress);
+    r.pos = centerPos;
+    r.lastInBoundsPos = { ...centerPos };
+    r.progress = safeProgress;
     return "offcourse";
   }
 

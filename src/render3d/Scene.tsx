@@ -6,9 +6,10 @@
 // collision surface; the active racer's marble is a dynamic RigidBody.
 // ============================================================================
 
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useFrame } from "@react-three/fiber";
+import * as THREE from "three";
 import type { Group } from "three";
 import { Physics } from "@react-three/rapier";
 import { EffectComposer, DepthOfField, Vignette } from "@react-three/postprocessing";
@@ -160,6 +161,43 @@ function TrajectoryPreview({
   );
 }
 
+/**
+ * Pulsing ring on the ground beneath the active cyclist — gives the player a
+ * clear click target and colour-codes whose turn it is.
+ */
+function TargetRing({
+  track,
+  pos,
+  color,
+}: {
+  track: Track;
+  pos: Vector2D;
+  color: string;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const geometry = useMemo(() => new THREE.TorusGeometry(1.4, 0.09, 8, 40), []);
+  const y = heightAt(track, pos.x, pos.y) + 0.15;
+
+  useFrame(({ clock }) => {
+    const m = meshRef.current;
+    if (!m) return;
+    // Gentle sine pulse: opacity 0.5 → 0.95 over ~1.2 s cycle
+    const t = (Math.sin(clock.getElapsedTime() * 5.2) + 1) / 2;
+    (m.material as THREE.MeshBasicMaterial).opacity = 0.5 + t * 0.45;
+  });
+
+  return (
+    <mesh
+      ref={meshRef}
+      geometry={geometry}
+      position={[pos.x, y, pos.y]}
+      rotation={[-Math.PI / 2, 0, 0]}
+    >
+      <meshBasicMaterial color={color} transparent opacity={0.7} depthWrite={false} />
+    </mesh>
+  );
+}
+
 export default function Scene({
   track,
   racers,
@@ -243,13 +281,16 @@ export default function Scene({
       {/* Carved sand channels (persistent deformation layer) */}
       <Trails3D track={track} trails={trails} />
 
-      {/* Direction arrow over active marble */}
+      {/* Pulsing target ring + direction arrow over active marble */}
       {active && !inPhysics && (
-        <DirectionArrow
-          track={track}
-          pos={active.pos}
-          progress={active.progress}
-        />
+        <>
+          <TargetRing track={track} pos={active.pos} color={active.color} />
+          <DirectionArrow
+            track={track}
+            pos={active.pos}
+            progress={active.progress}
+          />
+        </>
       )}
 
       {/* Finish beacon */}

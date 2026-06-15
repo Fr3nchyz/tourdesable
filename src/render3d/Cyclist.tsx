@@ -90,21 +90,21 @@ function Cyclist({ color, scale = 1 }: CyclistProps) {
       </mesh>
 
       {/* ====================== RIDER (racing tuck) ====================== */}
-      {/* torso: leaning forward, jersey colour */}
-      <mesh
-        castShadow
-        receiveShadow
-        position={[-0.05, 1.25, 0]}
-        rotation={[0, 0, 0.9]}
-      >
-        <capsuleGeometry args={[0.22, 0.5, 6, 12]} />
-        <meshStandardMaterial color={color} roughness={0.6} />
-      </mesh>
-
       {/* hips / shorts — on saddle */}
       <mesh castShadow position={[-0.42, 0.98, 0]}>
         <sphereGeometry args={[0.24, 12, 10]} />
         <meshStandardMaterial color={TIRE} roughness={0.8} />
+      </mesh>
+
+      {/* torso: lean forward (-Z rotation tilts top toward +X / front) */}
+      <mesh
+        castShadow
+        receiveShadow
+        position={[0.0, 1.26, 0]}
+        rotation={[0, 0, -0.95]}
+      >
+        <capsuleGeometry args={[0.22, 0.5, 6, 12]} />
+        <meshStandardMaterial color={color} roughness={0.6} />
       </mesh>
 
       {/* head + helmet, tucked over the bars */}
@@ -122,31 +122,20 @@ function Cyclist({ color, scale = 1 }: CyclistProps) {
         </mesh>
       </group>
 
-      {/* torso: lean forward (-Z rotation tilts top toward +X / front) */}
-      <mesh
-        castShadow
-        receiveShadow
-        position={[0.0, 1.26, 0]}
-        rotation={[0, 0, -0.95]}
-      >
-        <capsuleGeometry args={[0.22, 0.5, 6, 12]} />
-        <meshStandardMaterial color={color} roughness={0.6} />
-      </mesh>
-
-      {/* arms: from shoulder (near torso top) down to handlebars (mirrored on Z) */}
+      {/* arms: shoulder [0.38,1.53] → handlebars [0.82,1.18], mirrored on Z */}
       {([0.16, -0.16] as const).map((z) => (
         <mesh
           key={z}
           castShadow
-          position={[0.6, 1.38, z]}
-          rotation={[0, 0, 0.8]}
+          position={[0.60, 1.355, z]}
+          rotation={[0, 0, 0.9]}
         >
-          <capsuleGeometry args={[0.06, 0.55, 4, 8]} />
+          <capsuleGeometry args={[0.06, 0.44, 4, 8]} />
           <meshStandardMaterial color={color} roughness={0.6} />
         </mesh>
       ))}
 
-      {/* upper legs: hip -> pedal (mirrored on Z) */}
+      {/* upper legs: hip → pedal (mirrored on Z) */}
       {([0.13, -0.13] as const).map((z) => (
         <mesh
           key={`thigh-${z}`}
@@ -158,7 +147,7 @@ function Cyclist({ color, scale = 1 }: CyclistProps) {
           <meshStandardMaterial color={TIRE} roughness={0.75} />
         </mesh>
       ))}
-      {/* lower legs (shins, skin) */}
+      {/* shins */}
       {([0.13, -0.13] as const).map((z) => (
         <mesh
           key={`shin-${z}`}
@@ -168,6 +157,18 @@ function Cyclist({ color, scale = 1 }: CyclistProps) {
         >
           <capsuleGeometry args={[0.06, 0.4, 4, 8]} />
           <meshStandardMaterial color={SKIN} roughness={0.7} />
+        </mesh>
+      ))}
+      {/* feet / shoes */}
+      {([0.13, -0.13] as const).map((z) => (
+        <mesh
+          key={`foot-${z}`}
+          castShadow
+          position={[0.22, 0.24, z]}
+          rotation={[0, 0, Math.PI / 2]}
+        >
+          <capsuleGeometry args={[0.055, 0.2, 4, 8]} />
+          <meshStandardMaterial color={TIRE} roughness={0.85} />
         </mesh>
       ))}
     </group>

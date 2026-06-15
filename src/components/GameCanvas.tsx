@@ -212,6 +212,8 @@ export default function GameCanvas() {
         shadows
         dpr={[1, 2]}
         camera={{ position: [0, 40, -18], fov: 52 }}
+        // touch-action:none → touch-drag flicks aim instead of scrolling/zooming the page.
+        className="touch-none"
       >
         <Scene
           track={track}

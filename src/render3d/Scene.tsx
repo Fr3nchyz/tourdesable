@@ -16,10 +16,12 @@ import type { Track, Racer, TrailSegment, Vector2D } from "@/game/types";
 import {
   GRAVITY,
   MARBLE_RADIUS,
+  MARBLE_LINEAR_DAMPING,
   MAX_DRAG_WORLD,
   TENSION_THRESHOLD,
   TENSION_JITTER,
 } from "@/game/constants";
+import { heightAt } from "@/game/track";
 import Terrain from "./Terrain";
 import Rocks3D from "./Rocks3D";
 import Trails3D from "./Trails3D";
@@ -98,6 +100,59 @@ function AimArrow({
         <coneGeometry args={[0.55, 1.0, 10]} />
         <meshBasicMaterial color={color} transparent opacity={0.9} />
       </mesh>
+    </group>
+  );
+}
+
+/**
+ * Trajectory preview — a string of translucent glass-marble beads tracing the
+ * predicted ground path of the shot (a nod to the real marbles in the original
+ * game). Cosmetic only: a damped ballistic projection, not the live physics, so
+ * it indicates direction + relative reach rather than the exact landing spot.
+ */
+function TrajectoryPreview({
+  track,
+  origin,
+  aim,
+}: {
+  track: Track;
+  origin: [number, number, number];
+  aim: AimState;
+}) {
+  const STEPS = 16;
+  const DT = 0.09;
+  const V0_MAX = 26; // m/s at full power — tuned by feel, not derived.
+  const beads: [number, number, number][] = [];
+  let px = origin[0];
+  let pz = origin[2];
+  let vx = aim.dir.x * aim.power * V0_MAX;
+  let vz = aim.dir.y * aim.power * V0_MAX;
+  for (let i = 0; i < STEPS; i++) {
+    vx *= 1 - MARBLE_LINEAR_DAMPING * DT;
+    vz *= 1 - MARBLE_LINEAR_DAMPING * DT;
+    px += vx * DT;
+    pz += vz * DT;
+    beads.push([px, heightAt(track, px, pz) + MARBLE_RADIUS * 0.6, pz]);
+  }
+  return (
+    <group>
+      {beads.map((p, i) => {
+        const f = 1 - i / STEPS; // shrink toward the end
+        return (
+          <mesh key={i} position={p}>
+            <sphereGeometry args={[0.12 + 0.1 * f, 10, 10]} />
+            <meshPhysicalMaterial
+              color="#3ad17a"
+              transmission={0.9}
+              thickness={0.3}
+              roughness={0.08}
+              ior={1.5}
+              transparent
+              opacity={0.45 + 0.35 * f}
+            />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -197,8 +252,15 @@ export default function Scene({
       {/* Finish beacon */}
       <FinishBeacon track={track} />
 
-      {/* Aim arrow (slingshot preview) */}
-      {aim && !inPhysics && <AimArrow origin={aimOrigin} aim={aim} />}
+      {/* Aim arrow + glass-bead trajectory preview (slingshot) */}
+      {aim && !inPhysics && (
+        <>
+          <AimArrow origin={aimOrigin} aim={aim} />
+          {aim.power > 0.02 && (
+            <TrajectoryPreview track={track} origin={aimOrigin} aim={aim} />
+          )}
+        </>
+      )}
 
       {/* Orbit camera */}
       <OrbitCamera

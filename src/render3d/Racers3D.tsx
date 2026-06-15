@@ -147,6 +147,7 @@ function ActiveMarble({
       ref={rbRef}
       colliders={false}
       lockRotations
+      ccd
       position={[spawnX, spawnY, spawnZ]}
       linearDamping={MARBLE_LINEAR_DAMPING}
       angularDamping={MARBLE_ANGULAR_DAMPING}

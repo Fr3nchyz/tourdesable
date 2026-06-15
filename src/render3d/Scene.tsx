@@ -152,7 +152,9 @@ export default function Scene({
         shadow-bias={-0.0004}
       />
 
-      <Physics gravity={[0, GRAVITY, 0]} colliders={false}>
+      {/* Fixed timestep + interpolation → identical marble speed across 60/120/144 Hz
+          displays. These are the library defaults, set explicitly to document intent. */}
+      <Physics gravity={[0, GRAVITY, 0]} colliders={false} timeStep={1 / 60} interpolate>
         <Terrain track={track} />
         <Rocks3D track={track} />
         <Racers3D

@@ -1,15 +1,10 @@
-"use client";
+import GameCanvas from "@/components/GameCanvas";
 
-// The race is an all-client WebGL canvas (R3F + Rapier wasm). Load it with
-// ssr:false so Next never attempts to server-render the canvas — avoids
-// hydration churn and SSR-time `window`/WebGL access. `ssr:false` is only
-// valid inside a Client Component, hence the directive above.
-import dynamic from "next/dynamic";
-
-const GameCanvas = dynamic(() => import("@/components/GameCanvas"), {
-  ssr: false,
-});
-
+// NOTE: do NOT load this via next/dynamic({ ssr: false }). Under Next 16 +
+// Turbopack + React StrictMode that swap churns the R3F <Canvas> mount and
+// leaks WebGL contexts until the browser kills them ("WebGLRenderer: Context
+// Lost", blank canvas). GameCanvas is already "use client", so the canvas only
+// mounts client-side anyway — a plain import is correct here.
 export default function Home() {
   return <GameCanvas />;
 }

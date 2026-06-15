@@ -141,14 +141,17 @@ function TrajectoryPreview({
         return (
           <mesh key={i} position={p}>
             <sphereGeometry args={[0.12 + 0.1 * f, 10, 10]} />
-            <meshPhysicalMaterial
+            {/* Cheap translucent glass look — avoids a transmission render pass,
+                which can lose the WebGL context when stacked with DepthOfField. */}
+            <meshStandardMaterial
               color="#3ad17a"
-              transmission={0.9}
-              thickness={0.3}
-              roughness={0.08}
-              ior={1.5}
+              emissive="#1c8f4e"
+              emissiveIntensity={0.4}
+              roughness={0.15}
+              metalness={0}
               transparent
-              opacity={0.45 + 0.35 * f}
+              opacity={0.4 + 0.4 * f}
+              depthWrite={false}
             />
           </mesh>
         );

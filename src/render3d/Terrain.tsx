@@ -82,10 +82,14 @@ function buildSandTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasText
       const und = fbm(u * 0.8, v * 0.8, 3);
       const rip = 0.5 + 0.5 * Math.sin((u + v) * 7 + fbm(u * 1.5, v * 1.5, 2) * 4);
       const bright = 1 + (grain - 0.5) * 0.18 + (und - 0.5) * 0.14 + (rip - 0.5) * 0.06;
+      // Sparse pale shell flecks scattered through the golden sand (reference photos).
+      const shell = hash2(x * 1.7 + 3.1, y * 1.3 + 7.9);
+      const fleck = shell > 0.991 ? (shell - 0.991) / 0.009 : 0;
       const i = (y * TEX_SIZE + x) * 4;
-      cd[i]   = Math.max(0, Math.min(255, 0xe9 * bright));
-      cd[i+1] = Math.max(0, Math.min(255, 0xd8 * bright));
-      cd[i+2] = Math.max(0, Math.min(255, 0xa6 * bright));
+      // Warmer, more golden Breton beach sand than the old greige tone.
+      cd[i]   = Math.max(0, Math.min(255, 0xe8 * bright + fleck * 26));
+      cd[i+1] = Math.max(0, Math.min(255, 0xcf * bright + fleck * 30));
+      cd[i+2] = Math.max(0, Math.min(255, 0x90 * bright + fleck * 45));
       cd[i+3] = 255;
       const g = Math.max(0, Math.min(255, (grain * 0.7 + rip * 0.3) * 255));
       bd[i] = bd[i+1] = bd[i+2] = g; bd[i+3] = 255;
@@ -132,6 +136,8 @@ function buildTerrain(track: Track): TerrainData {
       else if (edgeCol === 1) y += 1.2;
       else if (edgeCol === 2) y += 0.6;
       else if (edgeCol === 3) y += 0.2;
+      // Jitter the berm crest so it reads as hand-patted crumbly sand, not a wall.
+      if (edgeCol <= 3) y += (valueNoise(col * 1.7, z * 0.6) - 0.5) * 0.5 * (4 - edgeCol);
       const vi = row * COLS + col;
       vertices[vi * 3]     = x;
       vertices[vi * 3 + 1] = y;

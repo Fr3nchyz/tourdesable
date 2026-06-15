@@ -13,8 +13,10 @@ export const MARBLE_RADIUS = 0.45;
 /** Sand drag: linear damping so marbles roll then settle. */
 export const MARBLE_LINEAR_DAMPING = 0.7;
 export const MARBLE_ANGULAR_DAMPING = 0.7;
-export const MARBLE_FRICTION = 0.9;
-export const MARBLE_RESTITUTION = 0.35;
+export const MARBLE_FRICTION = 0.95;
+export const MARBLE_RESTITUTION = 0.08;
+/** Extra downward force (N/step) keeping the marble pressed into terrain contours. */
+export const MARBLE_DOWNFORCE = 6.0;
 
 // --- Flick / launch ---
 /** Impulse magnitude at 100% power. */

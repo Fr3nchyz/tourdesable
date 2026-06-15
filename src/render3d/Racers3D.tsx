@@ -23,6 +23,7 @@ import {
   MARBLE_ANGULAR_DAMPING,
   MARBLE_FRICTION,
   MARBLE_RESTITUTION,
+  MARBLE_DOWNFORCE,
   SLEEP_SPEED,
   SETTLE_FRAMES,
   MAX_SETTLE_MS,
@@ -72,7 +73,7 @@ function ActiveMarble({
   // Spawn position — computed once per turn (component remounts via marbleKey).
   const spawnX = racer.pos.x;
   const spawnZ = racer.pos.y;
-  const spawnY = heightAt(track, spawnX, spawnZ) + MARBLE_RADIUS + 0.1;
+  const spawnY = heightAt(track, spawnX, spawnZ) + MARBLE_RADIUS + 0.02;
 
   useFrame(() => {
     const rb = rbRef.current;
@@ -117,6 +118,9 @@ function ActiveMarble({
     rb.setLinearDamping(sample.damping);
     // Zone grip: granite is slick, loose berm grabby (B3). Collider 0 is the ball.
     rb.collider(0)?.setFriction(sample.friction);
+    // Extra downforce keeps the marble pressed into terrain contours so it rolls,
+    // not floats. Applied every physics step (1/60 s).
+    rb.applyImpulse({ x: 0, y: -MARBLE_DOWNFORCE / 60, z: 0 }, false);
     if (sample.lateral.x !== 0 || sample.lateral.y !== 0) {
       rb.applyImpulse({ x: sample.lateral.x, y: 0, z: sample.lateral.y }, true);
     }
@@ -148,7 +152,7 @@ function ActiveMarble({
     <RigidBody
       ref={rbRef}
       colliders={false}
-      lockRotations
+      enabledRotations={[true, false, true]}
       ccd
       position={[spawnX, spawnY, spawnZ]}
       linearDamping={MARBLE_LINEAR_DAMPING}

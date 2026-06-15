@@ -18,33 +18,67 @@ import {
 
 const PATH_POINTS = 20;
 
+/** Gaussian hill/valley placed along the course Z axis. */
+interface MacroPeak {
+  /** Fractional position along course (0 = start, 1 = finish). */
+  t: number;
+  /** Height contribution in metres. Positive = hill, negative = valley. */
+  h: number;
+  /** Gaussian spread (0.12 = tight peak, 0.30 = broad rolling hill). */
+  sigma: number;
+}
+
 interface ThemeParams {
   elevation: Omit<ElevationField, "theme" | "seed">;
-  /** Path wander as a fraction of course width — higher = more S-curves. */
-  wander: number;
+  /**
+   * Macro elevation profile: Gaussian peaks/valleys layered on top of dunes.
+   * Replaces the old linear slope — creates Tour-de-France-style mountain stages.
+   */
+  macroProfile: MacroPeak[];
+  /** Sin frequency (radians) for the macro S/C path curve. π = one arch (C), 2π = S, 4π = double-S. */
+  curveFreq: number;
+  /** Amplitude of the macro curve as a fraction of (width/2 − 3). */
+  curveAmp: number;
   rockCount: [number, number];
   rockRadius: [number, number];
   rockHeight: [number, number];
 }
 
 const THEME_PARAMS: Record<Theme, ThemeParams> = {
+  // "Flat stage with a col" — rolling plains rising to a broad sandy crest, then descent.
   "trez-hir": {
-    elevation: { amp: 0.35, freq: 0.14, cliffAmp: 0, slope: 1 },
-    wander: 0.55,
+    elevation: { amp: 0.35, freq: 0.14, cliffAmp: 0, slope: 0 },
+    macroProfile: [
+      { t: 0.45, h: 3.5, sigma: 0.28 }, // one broad crest mid-course
+    ],
+    curveFreq: Math.PI * 1,   // gentle C
+    curveAmp: 0.55,
     rockCount: [4, 7],
     rockRadius: [0.8, 1.6],
     rockHeight: [0.6, 1.2],
   },
+  // "Coastal summit finish" — gradual climb to a headland peak, technical sea-cliff descent.
   "le-minou": {
-    elevation: { amp: 0.9, freq: 0.17, cliffAmp: 1.6, slope: 2.5 },
-    wander: 0.68,
+    elevation: { amp: 0.9, freq: 0.17, cliffAmp: 1.6, slope: 0 },
+    macroProfile: [
+      { t: 0.38, h: 6.0, sigma: 0.22 }, // main headland summit
+      { t: 0.72, h: 2.5, sigma: 0.14 }, // secondary bump before the cliff descent
+    ],
+    curveFreq: Math.PI * 2,   // one full S
+    curveAmp: 0.75,
     rockCount: [6, 10],
     rockRadius: [1.0, 2.2],
     rockHeight: [1.0, 2.4],
   },
+  // "Alpine queen stage" — two distinct cols, saddle between them, sprint descent to finish.
   bertheaume: {
-    elevation: { amp: 2.6, freq: 0.2, cliffAmp: 9, slope: 5 },
-    wander: 0.62,
+    elevation: { amp: 2.6, freq: 0.2, cliffAmp: 9, slope: 0 },
+    macroProfile: [
+      { t: 0.28, h: 8.0, sigma: 0.16 }, // first col (sharp peak)
+      { t: 0.62, h: 5.5, sigma: 0.18 }, // second col (slightly lower)
+    ],
+    curveFreq: Math.PI * 4,   // double S
+    curveAmp: 0.80,
     rockCount: [10, 15],
     rockRadius: [1.4, 3.2],
     rockHeight: [2.0, 5.0],
@@ -61,17 +95,19 @@ export function generateTrack(seed: number, theme: Theme): Track {
   const start: Vector2D = { x: randRange(rng, -4, 4), y: 6 };
   const finish: Vector2D = { x: randRange(rng, -6, 6), y: length - 6 };
 
-  // Wandering centerline start -> finish.
+  // Wandering centerline start → finish.
+  // Macro curve (sin with theme-specific freq/amp) gives the course its recognisable
+  // C / S / double-S shape; a small random nudge keeps each seed unique.
   const path: Vector2D[] = [];
+  const maxSwing = (width / 2 - 3) * tp.curveAmp;
   for (let i = 0; i < PATH_POINTS; i++) {
     const t = i / (PATH_POINTS - 1);
     const z = start.y + (finish.y - start.y) * t;
     const baseX = start.x + (finish.x - start.x) * t;
-    // Sinusoidal bias forces S-curves; random component adds variety.
-    const bias = Math.sin((i / (PATH_POINTS - 1)) * Math.PI * 3.5) * width * tp.wander * 0.55;
-    const noise = randRange(rng, -width * tp.wander * 0.45, width * tp.wander * 0.45);
-    const wander = i === 0 || i === PATH_POINTS - 1 ? 0 : bias + noise;
-    path.push({ x: clamp(baseX + wander, -width / 2 + 2, width / 2 - 2), y: z });
+    const macro = Math.sin(t * tp.curveFreq) * maxSwing;
+    const noise = randRange(rng, -maxSwing * 0.15, maxSwing * 0.15); // 15% micro-variation
+    const offset = i === 0 || i === PATH_POINTS - 1 ? 0 : macro + noise;
+    path.push({ x: clamp(baseX + offset, -width / 2 + 2, width / 2 - 2), y: z });
   }
 
   // Start grid across X at the start line.
@@ -132,8 +168,16 @@ function scatterRocks(
 /** Deterministic terrain height (world Y) at a ground point. */
 export function heightAt(track: Track, x: number, z: number): number {
   const e = track.elevation;
-  let h = e.slope * (z / track.length);
-  // Rolling dunes.
+  // Macro profile: Gaussian peaks/valleys give each theme a distinct elevation shape
+  // (Tour de France stage inspiration — flat stage / summit finish / alpine queen).
+  // These replace the old linear slope and are defined per theme in THEME_PARAMS.
+  const tp = THEME_PARAMS[track.theme];
+  let h = 0;
+  for (const peak of tp.macroProfile) {
+    const dt = z / track.length - peak.t;
+    h += peak.h * Math.exp(-(dt * dt) / (2 * peak.sigma * peak.sigma));
+  }
+  // Rolling dunes (texture riding on top of the macro profile).
   h +=
     e.amp *
     (Math.sin(x * e.freq + e.seed * 0.013) * 0.5 +

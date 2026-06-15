@@ -1,5 +1,16 @@
 # Tour de Sable — Full Project Context
 
+## Reference Photos
+
+These are photos of the original physical game that inspired Tour de Sable.
+
+| | |
+|---|---|
+| ![Cyclist figurines on a sand hill](docs/reference/tds%20figurines%20cyclists.jpeg) | ![Aerial view of the carved sand circuit](docs/reference/tds-circuit-riders.jpeg) |
+| Metal cyclist figurines navigating a hand-built sand hill — the original toys. | Aerial view of a full sand circuit with S-curves carved by hand. Shows the course shape and scale we're recreating. |
+| ![Marble flick technique next to a cyclist](docs/reference/tds-marbleflick-circuit.jpeg) | ![Children flicking marbles on a sand channel](docs/reference/tds-marbles-flick.jpeg) |
+| The marble is flicked with fingers to push the cyclist forward — the core mechanic. | Children playing the original game: marbles in a narrow carved sand channel, exactly the interaction the digital flick replicates. |
+
 This document is a handoff brief for any agent, model, or developer picking up this project cold. It covers the origin concept, every major architectural decision and why it was made, current tuning state, known issues, and the roadmap.
 
 ---

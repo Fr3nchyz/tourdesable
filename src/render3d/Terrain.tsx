@@ -9,8 +9,18 @@
 import { useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { RigidBody, TrimeshCollider } from "@react-three/rapier";
-import type { Track } from "@/game/types";
+import type { Track, Zone } from "@/game/types";
 import { heightAt } from "@/game/track";
+import { zoneAt } from "@/game/surface";
+
+// Per-zone vertex tint (multiplies the sand texture). Keeps the look in lockstep
+// with the physics zones (B3): the smooth light channel is the fast line, the
+// darker rough shoulders are the draggy loose berm, grey aprons mark granite.
+const ZONE_TINT: Record<Zone, [number, number, number]> = {
+  sand: [1.05, 1.03, 0.99],
+  loose_sand_berm: [0.82, 0.75, 0.63],
+  granite_rock: [0.69, 0.71, 0.75],
+};
 
 // Grid resolution: more rows (Z) than cols (X) since the course is longer.
 const COLS = 20; // vertices along X (course width)
@@ -108,6 +118,7 @@ function buildTerrain(track: Track): TerrainData {
   const vCount = COLS * ROWS;
   const vertices = new Float32Array(vCount * 3);
   const uvs = new Float32Array(vCount * 2);
+  const colors = new Float32Array(vCount * 3);
   const indexList: number[] = [];
 
   for (let row = 0; row < ROWS; row++) {
@@ -127,6 +138,10 @@ function buildTerrain(track: Track): TerrainData {
       vertices[vi * 3 + 2] = z;
       uvs[vi * 2]     = (col / (COLS - 1)) * REPEAT;
       uvs[vi * 2 + 1] = (row / (ROWS - 1)) * REPEAT;
+      const tint = ZONE_TINT[zoneAt(track, { x, y: z })];
+      colors[vi * 3]     = tint[0];
+      colors[vi * 3 + 1] = tint[1];
+      colors[vi * 3 + 2] = tint[2];
     }
   }
 
@@ -144,6 +159,7 @@ function buildTerrain(track: Track): TerrainData {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
 
@@ -180,9 +196,10 @@ export default function Terrain({ track }: { track: Track }) {
             bumpScale={0.06}
             roughness={0.92}
             metalness={0}
+            vertexColors
           />
         ) : (
-          <meshStandardMaterial color="#e9d8a6" roughness={0.92} metalness={0} />
+          <meshStandardMaterial color="#e9d8a6" roughness={0.92} metalness={0} vertexColors />
         )}
       </mesh>
     </>

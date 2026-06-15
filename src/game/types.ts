@@ -99,6 +99,16 @@ export interface Track {
 // --- Surface displacement engine ---
 
 /**
+ * Coastal geology classification of a ground patch. Drives both the physics
+ * material (surface.ts → Rapier damping/friction) and the visual tint
+ * (Terrain.tsx), so the sand you see matches the sand you feel.
+ *   • sand            — the carved racing channel; the fast line.
+ *   • loose_sand_berm — pushed-up shoulder sand; high drag punishes wide lines.
+ *   • granite_rock    — hard apron around rocks; slick and skittish.
+ */
+export type Zone = "sand" | "loose_sand_berm" | "granite_rock";
+
+/**
  * Material properties of a patch of ground. Pure data — consumed by surface.ts
  * to derive the effective Rapier damping / friction / lateral force each frame.
  * Kept framework-agnostic so the math ports cleanly to e.g. Godot.

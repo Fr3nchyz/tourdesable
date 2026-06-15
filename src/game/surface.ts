@@ -12,10 +12,13 @@
 // the math portable (e.g. droppable into a Godot GDScript / shader).
 // ============================================================================
 
-import type { SurfaceMaterial, Track, TrailSegment, Vector2D } from "./types";
+import type { SurfaceMaterial, Track, TrailSegment, Vector2D, Zone } from "./types";
 import * as V from "./vector";
+import { pathPointAt } from "./track";
 import {
-  SAND_MATERIAL,
+  ZONE_MATERIAL,
+  ZONE_FRICTION,
+  GRANITE_MARGIN,
   SINK_GAIN,
   SINK_SCALE,
   GRAIN_FREQ,
@@ -79,12 +82,31 @@ export function grainAt(track: Track, pos: Vector2D): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Material at a ground position. For the Blancs-Sablons primary this is a
- * single sand material everywhere; the signature takes (track, pos) so future
- * themes / zones can vary it without touching call sites.
+ * Coastal geology classification of a ground patch:
+ *   • granite_rock    — within the hard apron around any rock.
+ *   • loose_sand_berm — beyond the carved channel half-width (off the racing line).
+ *   • sand            — on the channel: the fast line.
+ * The berm threshold reuses LANE_HALF_WIDTH so it matches the cambered lane and
+ * the carved channel cut by track.ts:heightAt.
  */
-export function materialFor(_track: Track, _pos: Vector2D): SurfaceMaterial {
-  return SAND_MATERIAL;
+export function zoneAt(track: Track, pos: Vector2D): Zone {
+  for (const r of track.rocks) {
+    const dx = pos.x - r.pos.x;
+    const dz = pos.y - r.pos.y;
+    const reach = r.radius + GRANITE_MARGIN;
+    if (dx * dx + dz * dz <= reach * reach) return "granite_rock";
+  }
+  const centre = pathPointAt(track, pos.y / track.length);
+  if (Math.abs(pos.x - centre.x) > LANE_HALF_WIDTH) return "loose_sand_berm";
+  return "sand";
+}
+
+/**
+ * Material at a ground position, resolved through its coastal zone. The
+ * signature stays (track, pos) so call sites are unchanged.
+ */
+export function materialFor(track: Track, pos: Vector2D): SurfaceMaterial {
+  return ZONE_MATERIAL[zoneAt(track, pos)];
 }
 
 /**
@@ -168,7 +190,8 @@ export function surfaceAt(
   pos: Vector2D,
   vel: Vector2D,
 ): SurfaceSample {
-  const mat = materialFor(track, pos);
+  const zone = zoneAt(track, pos);
+  const mat = ZONE_MATERIAL[zone];
   const speed = V.len(vel);
 
   // Base rolling resistance + Perlin grain variance + sink-to-stop.
@@ -192,5 +215,5 @@ export function surfaceAt(
   // Camber: crowned lane pushes the marble toward the shoulder.
   lateral = V.add(lateral, camberLateral(track, pos, vel));
 
-  return { damping, friction: 0.9, lateral };
+  return { damping, friction: ZONE_FRICTION[zone], lateral };
 }

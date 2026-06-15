@@ -38,14 +38,49 @@ export const GRAVITY = -20;
 // surface.ts samples these each frame and pushes effective damping / lateral
 // force into the Rapier body. baseFriction ≈ the old MARBLE_LINEAR_DAMPING, so
 // behaviour is preserved when grain / trails / sink contribute nothing.
-import type { SurfaceMaterial } from "./types";
+import type { SurfaceMaterial, Zone } from "./types";
 
-/** Dry beach sand (Blancs-Sablons primary). */
+/** Dry beach sand (Blancs-Sablons primary) — the carved racing channel. */
 export const SAND_MATERIAL: SurfaceMaterial = {
   baseFriction: 0.7,
   grainResistance: 0.4,
   deformationFactor: 0.5,
 };
+
+// --- Coastal geology zones (B3) ---
+// Beyond the carved channel the sand is loose and draggy; close to rocks the
+// ground is hard granite — slick and skittish. zoneAt() in surface.ts classifies
+// each ground patch, and ZONE_MATERIAL / ZONE_FRICTION turn that into feel.
+
+/** Loose pushed-up berm sand: high drag punishes lines that stray off the channel. */
+export const LOOSE_SAND_BERM_MATERIAL: SurfaceMaterial = {
+  baseFriction: 1.4,
+  grainResistance: 0.5,
+  deformationFactor: 0.2,
+};
+
+/** Granite apron around rocks: hard, slick, low drag, does not hold a carve. */
+export const GRANITE_ROCK_MATERIAL: SurfaceMaterial = {
+  baseFriction: 0.28,
+  grainResistance: 0.12,
+  deformationFactor: 0,
+};
+
+export const ZONE_MATERIAL: Record<Zone, SurfaceMaterial> = {
+  sand: SAND_MATERIAL,
+  loose_sand_berm: LOOSE_SAND_BERM_MATERIAL,
+  granite_rock: GRANITE_ROCK_MATERIAL,
+};
+
+/** Collider grip (Rapier friction) per zone — granite is slick, berm grabby. */
+export const ZONE_FRICTION: Record<Zone, number> = {
+  sand: 0.9,
+  loose_sand_berm: 1.0,
+  granite_rock: 0.3,
+};
+
+/** Extra radius (m) of the hard granite apron beyond a rock's footprint. */
+export const GRANITE_MARGIN = 0.9;
 
 /** "Sink-to-stop": extra damping added as speed→0 (the settling "thud"). */
 export const SINK_GAIN = 1.0;

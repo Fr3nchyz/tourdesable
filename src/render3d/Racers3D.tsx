@@ -115,6 +115,8 @@ function ActiveMarble({
       { x: vel.x, y: vel.z },
     );
     rb.setLinearDamping(sample.damping);
+    // Zone grip: granite is slick, loose berm grabby (B3). Collider 0 is the ball.
+    rb.collider(0)?.setFriction(sample.friction);
     if (sample.lateral.x !== 0 || sample.lateral.y !== 0) {
       rb.applyImpulse({ x: sample.lateral.x, y: 0, z: sample.lateral.y }, true);
     }

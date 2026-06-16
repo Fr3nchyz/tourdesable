@@ -42,3 +42,8 @@ next-env.d.ts
 
 # Claude Code local permissions
 .claude/settings.local.json
+.aider*
+
+# local editor / tooling
+litellm_config.yaml
+*.code-workspace

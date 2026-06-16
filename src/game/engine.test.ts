@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createInitialState, selectTrack, activeRacer, isHumanInput } from "./stateMachine";
-import { applyLaunch, update, takeBotTurn } from "./engine";
-import { loopPointAt, tangentAt } from "./track";
+import { applyLaunch, takeBotTurn, updateRacerPos, onSettled } from "./engine";
 import { RACER_COUNT } from "./constants";
-import * as V from "./vector";
 import type { GameState } from "./types";
 
 const SEED = 4242;
@@ -12,23 +10,13 @@ function started(): GameState {
   return selectTrack(createInitialState(SEED), 0);
 }
 
-/** Run frames until the turn settles (or a safety cap). */
-function runUntilSettled(state: GameState, cap = 5000): number {
-  let frames = 0;
-  while (state.turnSubPhase === "PHYSICS" && frames < cap) {
-    update(state);
-    frames++;
-  }
-  return frames;
-}
-
 describe("lobby + init", () => {
   it("starts in the lobby with three distinct tracks", () => {
     const s = createInitialState(SEED);
     expect(s.phase).toBe("LOBBY_VOTE");
     expect(s.lobbyTracks).toHaveLength(3);
-    const seeds = s.lobbyTracks.map((t) => t.seed);
-    expect(new Set(seeds).size).toBe(3);
+    const themes = s.lobbyTracks.map((t) => t.theme);
+    expect(new Set(themes).size).toBe(3);
   });
 
   it("selecting a track spawns the grid and starts the turn cycle", () => {
@@ -41,106 +29,125 @@ describe("lobby + init", () => {
   });
 });
 
-describe("flick -> physics -> resolution", () => {
-  it("applyLaunch enters PHYSICS and sets velocity", () => {
+describe("applyLaunch", () => {
+  it("enters PHYSICS phase", () => {
     const s = started();
-    applyLaunch(s, { dir: { x: 0, y: -1 }, power: 0.5 });
+    applyLaunch(s, { dir: { x: 0, y: 1 }, power: 0.5 });
     expect(s.turnSubPhase).toBe("PHYSICS");
-    expect(activeRacer(s).vel.y).toBeLessThan(0);
   });
 
-  it("blocks resolution until the marble stops, then advances the turn", () => {
+  it("returns a 3D impulse scaled by power", () => {
     const s = started();
-    applyLaunch(s, { dir: { x: 0, y: -1 }, power: 0.4 });
-    // One frame in: still moving, still player 0's turn.
-    update(s);
-    if (s.turnSubPhase === "PHYSICS") {
-      expect(s.activeTurn).toBe(0);
-    }
-    runUntilSettled(s);
+    const impulse = applyLaunch(s, { dir: { x: 0, y: 1 }, power: 1.0 });
+    expect(impulse.x).toBeCloseTo(0);
+    expect(impulse.y).toBeCloseTo(0);
+    expect(Math.abs(impulse.z)).toBeGreaterThan(0);
+  });
+
+  it("direction maps ground-plane (x,y) to world (x,0,z)", () => {
+    const s = started();
+    const impulse = applyLaunch(s, { dir: { x: 1, y: 0 }, power: 1.0 });
+    expect(impulse.x).toBeGreaterThan(0);
+    expect(impulse.y).toBeCloseTo(0);
+    expect(impulse.z).toBeCloseTo(0);
+  });
+});
+
+describe("takeBotTurn", () => {
+  it("enters PHYSICS phase and returns a valid impulse", () => {
+    const s = started();
+    // Make the first player a bot so takeBotTurn acts on it.
+    s.racers[0].isHuman = false;
+    s.racers[0].botType = "sniper";
+    const impulse = takeBotTurn(s);
+    expect(s.turnSubPhase).toBe("PHYSICS");
+    const mag = Math.hypot(impulse.x, impulse.y, impulse.z);
+    expect(mag).toBeGreaterThan(0);
+  });
+});
+
+describe("updateRacerPos", () => {
+  it("returns ok for a normal in-bounds position", () => {
+    const s = started();
+    const track = s.track!;
+    const r = s.racers[0];
+    const result = updateRacerPos(s, r.id, r.pos.x, 0, r.pos.y + 5);
+    expect(result).toBe("ok");
+  });
+
+  it("returns finish when marble reaches the finish zone", () => {
+    const s = started();
+    const track = s.track!;
+    const r = s.racers[0];
+    const result = updateRacerPos(
+      s,
+      r.id,
+      track.finish.x,
+      0,
+      track.finish.y,
+    );
+    expect(result).toBe("finish");
+    expect(r.state).toBe("finished");
+    expect(s.winnerId).toBe(r.id);
+  });
+
+  it("returns offcourse when marble falls below sea level", () => {
+    const s = started();
+    const track = s.track!;
+    const r = s.racers[0];
+    const result = updateRacerPos(s, r.id, r.pos.x, track.seaLevelY - 1, r.pos.y);
+    expect(result).toBe("offcourse");
+    expect(r.state).toBe("tipped");
+    expect(r.skipNextTurn).toBe(true);
+  });
+
+  it("returns offcourse when marble leaves the course bounds", () => {
+    const s = started();
+    const track = s.track!;
+    const r = s.racers[0];
+    const result = updateRacerPos(s, r.id, track.width, 0, r.pos.y);
+    expect(result).toBe("offcourse");
+  });
+});
+
+describe("onSettled", () => {
+  it("advances the turn and resets to INPUT", () => {
+    const s = started();
+    applyLaunch(s, { dir: { x: 0, y: 1 }, power: 0.3 });
+    expect(s.turnSubPhase).toBe("PHYSICS");
+    onSettled(s);
     expect(s.turnSubPhase).toBe("INPUT");
-    expect(s.activeTurn).toBe(1); // handed to the next racer
-    expect(activeRacer(s).vel).toEqual({ x: 0, y: 0 });
+    expect(s.activeTurn).toBe(1);
   });
 
-  it("update is a no-op outside the physics phase", () => {
+  it("transitions to VICTORY when a winner exists", () => {
     const s = started();
-    const ev = update(s); // still INPUT
-    expect(ev.settled).toBe(false);
-    expect(s.activeTurn).toBe(0);
-  });
-});
-
-describe("pocket-stealer shunt in the loop", () => {
-  it("attacker stops; target is launched forward", () => {
-    const s = started();
-    const t = s.track!;
-    const tt = 0.35;
-    const center = loopPointAt(t, tt);
-    const tangent = tangentAt(t, tt);
-
-    const attacker = s.racers[0];
-    attacker.pos = { ...center };
-    attacker.lastInBoundsPos = { ...center };
-
-    const target = s.racers[1];
-    const targetPos = V.add(center, V.scale(tangent, 36)); // just ahead, in range
-    target.pos = { ...targetPos };
-    target.lastInBoundsPos = { ...targetPos };
-    target.state = "stopped";
-    const targetStart = { ...targetPos };
-
-    applyLaunch(s, { dir: tangent, power: 0.8 });
-    runUntilSettled(s);
-
-    expect(["stopped", "tipped"]).toContain(attacker.state);
-    // Target was shoved forward, away from where it sat.
-    expect(V.dist(target.pos, targetStart)).toBeGreaterThan(5);
-  });
-});
-
-describe("victory", () => {
-  it("completing the lap crosses the finish and flips to VICTORY", () => {
-    const s = started();
-    const t = s.track!;
-    const human = s.racers[0];
-
-    // Park the human just before the finish line, having already passed halfway.
-    const startT = 0.97;
-    human.pos = loopPointAt(t, startT);
-    human.lastInBoundsPos = { ...human.pos };
-    human.loopT = startT;
-    human.passedHalf = true;
-
-    applyLaunch(s, { dir: tangentAt(t, startT), power: 0.6 });
-    runUntilSettled(s);
-
-    expect(s.winnerId).toBe(human.id);
+    s.winnerId = s.racers[0].id;
+    applyLaunch(s, { dir: { x: 0, y: 1 }, power: 0.3 });
+    onSettled(s);
     expect(s.phase).toBe("VICTORY");
   });
 });
 
-describe("bot turns + full round", () => {
+describe("bot round cycling", () => {
   it("every racer acts and the round advances", () => {
     const s = started();
     const acted = new Set<string>();
-
-    // Drive whole turns until the round ticks over (or a safety cap). A bot may
-    // knock another off the grid, so a racer's turn can be skipped — we only
-    // require that the cycle completes and the round advances.
     let guard = 0;
+
     while (s.round < 2 && guard++ < 20) {
       acted.add(activeRacer(s).id);
       if (isHumanInput(s)) {
-        applyLaunch(s, { dir: { x: 0, y: -1 }, power: 0.3 });
+        applyLaunch(s, { dir: { x: 0, y: 1 }, power: 0.3 });
       } else {
         takeBotTurn(s);
       }
-      runUntilSettled(s);
+      // Simulate settle: immediately resolve (no real physics in tests).
+      onSettled(s);
     }
 
     expect(s.round).toBe(2);
-    expect(acted.size).toBeGreaterThanOrEqual(2); // multiple racers took turns
+    expect(acted.size).toBeGreaterThanOrEqual(2);
     expect(["TURN_CYCLE", "VICTORY"]).toContain(s.phase);
   });
 });

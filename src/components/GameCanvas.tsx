@@ -6,41 +6,52 @@ import type { GameState, Vector2D } from "@/game/types";
 import {
   createInitialState,
   selectTrack,
+  restartCurrentTrack,
   isHumanInput,
   isBotInput,
   activeRacer,
 } from "@/game/stateMachine";
-import { applyLaunch, takeBotTurn, update } from "@/game/engine";
+import {
+  applyLaunch,
+  takeBotTurn,
+  updateRacerPos,
+  onSettled,
+  recordTrail,
+} from "@/game/engine";
+import type { Impulse3D } from "@/render3d/Racers3D";
 import { audio } from "@/audio/audio";
-import { MAX_DRAG_DISTANCE, MARBLE_RADIUS } from "@/game/constants";
+import { MAX_DRAG_WORLD, MARBLE_RADIUS } from "@/game/constants";
 import Scene, { type AimState } from "@/render3d/Scene";
 import LobbyVote from "./LobbyVote";
 import HUD from "./HUD";
+import EscMenu from "./EscMenu";
 import VictoryScreen from "./VictoryScreen";
 
-const BOT_THINK_MS = 700;
-const WAVE_MS = 2200;
+const BOT_THINK_MS = 750;
 
 export default function GameCanvas() {
   const [view, setView] = useState<GameState>(createInitialState);
   const stateRef = useRef<GameState>(view);
   const [aim, setAim] = useState<AimState | null>(null);
+  const [isAiming, setIsAiming] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [waveWarning, setWaveWarning] = useState(false);
+  const [volume, setVolume] = useState(0.8);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const draggingRef = useRef(false);
   const aimRef = useRef<AimState | null>(null);
+  const impulseRef = useRef<Impulse3D | null>(null);
+  const recenterRef = useRef(false);
   const botTimerRef = useRef<number | null>(null);
-  const waveUntilRef = useRef<number>(0);
-  const shakeRef = useRef<number>(0);
 
   const publish = useCallback(() => setView({ ...stateRef.current }), []);
 
-  // --- lobby selection ---
+  // --- lobby ---
   const handleSelect = useCallback(
     (index: number) => {
       audio.resume();
       stateRef.current = selectTrack(stateRef.current, index);
+      recenterRef.current = true;
       publish();
     },
     [publish],
@@ -48,36 +59,90 @@ export default function GameCanvas() {
 
   const handleReplay = useCallback(() => {
     stateRef.current = createInitialState();
+    impulseRef.current = null;
     setAim(null);
     aimRef.current = null;
-    waveUntilRef.current = 0;
     publish();
   }, [publish]);
 
-  // --- flick input (board coords from the scene's ground raycast) ---
-  const onAimDown = useCallback((board: Vector2D) => {
+  const handleResetMap = useCallback(() => {
+    stateRef.current = restartCurrentTrack(stateRef.current);
+    impulseRef.current = null;
+    setAim(null);
+    aimRef.current = null;
+    recenterRef.current = true;
+    setMenuOpen(false);
+    publish();
+  }, [publish]);
+
+  const handleLobby = useCallback(() => {
+    stateRef.current = createInitialState();
+    impulseRef.current = null;
+    setAim(null);
+    aimRef.current = null;
+    setMenuOpen(false);
+    publish();
+  }, [publish]);
+
+  const handleVolumeChange = useCallback((v: number) => {
+    setVolume(v);
+    audio.setVolume(v);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMenuOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // --- settle callback (called from inside the R3F Canvas) ---
+  const handleSettle = useCallback(
+    (carvedPath: Vector2D[]) => {
+      recordTrail(stateRef.current, carvedPath);
+      onSettled(stateRef.current);
+      publish();
+      recenterRef.current = true;
+    },
+    [publish],
+  );
+
+  // --- position update (called per-frame from inside R3F, no re-render) ---
+  const handleRacerPos = useCallback(
+    (id: string, wx: number, wy: number, wz: number) =>
+      updateRacerPos(stateRef.current, id, wx, wy, wz),
+    [],
+  );
+
+  // --- flick input ---
+  const onAimDown = useCallback((ground: Vector2D) => {
     const s = stateRef.current;
     if (!isHumanInput(s)) return;
     const r = activeRacer(s);
-    if (Math.hypot(board.x - r.pos.x, board.y - r.pos.y) > MARBLE_RADIUS * 5) return;
+    if (Math.hypot(ground.x - r.pos.x, ground.y - r.pos.y) > MARBLE_RADIUS * 6) return;
     draggingRef.current = true;
+    setIsAiming(true);
     audio.resume();
-    const a = { dir: { x: 0, y: -1 }, power: 0 };
+    const a: AimState = { dir: { x: 0, y: 1 }, power: 0 };
     aimRef.current = a;
     setAim(a);
   }, []);
 
-  const onAimMove = useCallback((board: Vector2D) => {
+  const onAimMove = useCallback((ground: Vector2D) => {
     if (!draggingRef.current) return;
     const r = activeRacer(stateRef.current);
-    const back = { x: r.pos.x - board.x, y: r.pos.y - board.y };
+    const back = { x: r.pos.x - ground.x, y: r.pos.y - ground.y };
     const dist = Math.hypot(back.x, back.y);
     const a: AimState =
-      dist < 1
-        ? { dir: { x: 0, y: -1 }, power: 0 }
+      dist < 0.5
+        ? { dir: { x: 0, y: 1 }, power: 0 }
         : {
             dir: { x: back.x / dist, y: back.y / dist },
-            power: Math.min(1, dist / MAX_DRAG_DISTANCE),
+            power: Math.min(1, dist / MAX_DRAG_WORLD),
           };
     aimRef.current = a;
     setAim(a);
@@ -86,62 +151,32 @@ export default function GameCanvas() {
   const onAimUp = useCallback(() => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
+    setIsAiming(false);
     const a = aimRef.current;
     aimRef.current = null;
     setAim(null);
     if (a && a.power > 0.05) {
-      applyLaunch(stateRef.current, { dir: a.dir, power: a.power });
+      const impulse = applyLaunch(stateRef.current, { dir: a.dir, power: a.power });
+      impulseRef.current = impulse;
       publish();
     }
   }, [publish]);
 
-  // --- simulation loop ---
+  // --- bot turn scheduling (RAF loop just for the timer check) ---
   useEffect(() => {
     let raf = 0;
     const loop = () => {
       raf = requestAnimationFrame(loop);
       const s = stateRef.current;
-
-      if (s.phase === "TURN_CYCLE" && s.turnSubPhase === "PHYSICS") {
-        const ev = update(s);
-        for (const c of ev.collisions) {
-          audio.clink(c.hard ? 1 : 0.5);
-          if (c.hard) shakeRef.current = Math.max(shakeRef.current, 1.4);
-        }
-        if (ev.bounces.length > 0) {
-          audio.thud();
-          shakeRef.current = Math.max(shakeRef.current, 0.6);
-        }
-        if (ev.waveTriggered) {
-          waveUntilRef.current = performance.now() + WAVE_MS;
-          audio.startOcean();
-          shakeRef.current = 1.6;
-          setWaveWarning(true);
-        }
-        // Publish every physics frame so the camera + marbles follow live.
-        setView({ ...s });
-      }
-
-      // Bot turn (after a short think), unless a wave is animating.
-      if (
-        isBotInput(s) &&
-        botTimerRef.current == null &&
-        performance.now() > waveUntilRef.current
-      ) {
+      if (isBotInput(s) && botTimerRef.current == null) {
         botTimerRef.current = window.setTimeout(() => {
           botTimerRef.current = null;
           if (isBotInput(stateRef.current)) {
-            takeBotTurn(stateRef.current);
+            const impulse = takeBotTurn(stateRef.current);
+            impulseRef.current = impulse;
             setView({ ...stateRef.current });
           }
         }, BOT_THINK_MS);
-      }
-
-      // Wave audio cleanup.
-      if (waveUntilRef.current && performance.now() > waveUntilRef.current) {
-        waveUntilRef.current = 0;
-        audio.stopOcean();
-        setWaveWarning(false);
       }
     };
     raf = requestAnimationFrame(loop);
@@ -151,9 +186,8 @@ export default function GameCanvas() {
     };
   }, []);
 
-  useEffect(() => {
-    audio.setMuted(muted);
-  }, [muted]);
+  useEffect(() => { audio.setMuted(muted); }, [muted]);
+  useEffect(() => { audio.setVolume(volume); }, [volume]);
 
   const phase = view.phase;
 
@@ -167,17 +201,33 @@ export default function GameCanvas() {
 
   const track = view.track!;
   const activeId = view.turnOrder[view.activeTurn];
+  const inPhysics = view.turnSubPhase === "PHYSICS";
+  // Unique key per turn — forces ActiveMarble to remount fresh each shot,
+  // clearing stale Rapier body position and internal refs.
+  const marbleKey = `${activeId}-${view.round}-${view.activeTurn}`;
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-sky-200">
-      <Canvas shadows dpr={[1, 2]} camera={{ position: [20, 28, 24], fov: 42 }}>
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        camera={{ position: [0, 40, -18], fov: 52 }}
+        // touch-action:none → touch-drag flicks aim instead of scrolling/zooming the page.
+        className="touch-none"
+      >
         <Scene
           track={track}
           racers={view.racers}
           activeId={activeId}
-          tight={isHumanInput(view)}
+          marbleKey={marbleKey}
+          trails={view.trails}
+          inPhysics={inPhysics}
           aim={aim}
-          shakeRef={shakeRef}
+          isAiming={isAiming}
+          impulseRef={impulseRef}
+          recenterRef={recenterRef}
+          onRacerPos={handleRacerPos}
+          onSettle={handleSettle}
           onAimDown={onAimDown}
           onAimMove={onAimMove}
           onAimUp={onAimUp}
@@ -188,9 +238,23 @@ export default function GameCanvas() {
         state={view}
         muted={muted}
         onToggleMute={() => setMuted((m) => !m)}
-        waveWarning={waveWarning}
+        onRecenter={() => { recenterRef.current = true; }}
+        onMenu={() => setMenuOpen(true)}
       />
-      {phase === "VICTORY" && <VictoryScreen state={view} onReplay={handleReplay} />}
+      {menuOpen && (
+        <EscMenu
+          onClose={() => setMenuOpen(false)}
+          onResetMap={handleResetMap}
+          onLobby={handleLobby}
+          muted={muted}
+          onToggleMute={() => setMuted((m) => !m)}
+          volume={volume}
+          onVolumeChange={handleVolumeChange}
+        />
+      )}
+      {phase === "VICTORY" && (
+        <VictoryScreen state={view} onReplay={handleReplay} />
+      )}
     </div>
   );
 }

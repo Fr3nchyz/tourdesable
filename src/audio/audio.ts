@@ -10,6 +10,7 @@ export class AudioEngine {
   private oceanGain: GainNode | null = null;
   private oceanSrc: AudioBufferSourceNode | null = null;
   private muted = false;
+  private volume = 0.8;
 
   /** Must be called from a user gesture to satisfy autoplay policies. */
   resume(): void {
@@ -28,12 +29,20 @@ export class AudioEngine {
     if (m) this.stopOcean();
   }
 
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+  }
+
+  getVolume(): number {
+    return this.volume;
+  }
+
   /** Short metallic "clink" — two detuned partials with a fast decay. */
   clink(intensity = 1): void {
     if (this.muted || !this.ctx) return;
     const t = this.ctx.currentTime;
     const gain = this.ctx.createGain();
-    const vol = Math.min(0.5, 0.18 + intensity * 0.22);
+    const vol = Math.min(0.5, (0.18 + intensity * 0.22) * this.volume);
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
     gain.connect(this.ctx.destination);
@@ -58,7 +67,7 @@ export class AudioEngine {
     const t = this.ctx.currentTime;
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.22 * this.volume, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
     gain.connect(this.ctx.destination);
     const osc = this.ctx.createOscillator();

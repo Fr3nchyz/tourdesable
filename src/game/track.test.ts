@@ -1,93 +1,145 @@
 import { describe, it, expect } from "vitest";
 import {
   generateTrack,
-  nearestOnLoop,
-  loopPointAt,
-  tangentAt,
-  offsetFromCenter,
-  progressFor,
-  isPastBerm,
-  isOffBoard,
+  heightAt,
+  progressAlongPath,
+  pathPointAt,
+  atFinish,
+  isOffCourse,
 } from "./track";
+import { createInitialState } from "./stateMachine";
 import * as V from "./vector";
-import { RACER_COUNT } from "./constants";
+import { RACER_COUNT, THEMES } from "./constants";
 
-describe("circuit generation", () => {
-  it("is deterministic for a seed", () => {
-    expect(generateTrack(777)).toEqual(generateTrack(777));
+describe("track generation", () => {
+  it("is deterministic for the same seed + theme", () => {
+    const a = generateTrack(777, "trez-hir");
+    const b = generateTrack(777, "trez-hir");
+    expect(a).toEqual(b);
   });
 
-  it("different seeds produce different loops", () => {
-    expect(generateTrack(1).loop).not.toEqual(generateTrack(2).loop);
+  it("different seeds produce different paths", () => {
+    const a = generateTrack(1, "trez-hir");
+    const b = generateTrack(2, "trez-hir");
+    expect(a.path).not.toEqual(b.path);
   });
 
-  it("builds a closed loop with monotonic arc lengths", () => {
-    const t = generateTrack(33);
-    expect(t.loop.length).toBeGreaterThan(16);
-    expect(t.cumLen).toHaveLength(t.loop.length + 1);
-    expect(t.cumLen[0]).toBe(0);
-    for (let i = 1; i < t.cumLen.length; i++) {
-      expect(t.cumLen[i]).toBeGreaterThan(t.cumLen[i - 1]);
-    }
-    expect(t.loopLength).toBeCloseTo(t.cumLen[t.cumLen.length - 1], 6);
+  it("different themes produce different elevation params", () => {
+    const flat = generateTrack(42, "trez-hir");
+    const cliff = generateTrack(42, "bertheaume");
+    expect(flat.elevation.cliffAmp).toBe(0);
+    expect(cliff.elevation.cliffAmp).toBeGreaterThan(0);
   });
 
-  it("keeps the channel inside the board", () => {
-    const t = generateTrack(8);
-    for (const p of t.loop) {
-      expect(p.x - t.trackHalfWidth).toBeGreaterThanOrEqual(0);
-      expect(p.y - t.trackHalfWidth).toBeGreaterThanOrEqual(0);
-      expect(p.x + t.trackHalfWidth).toBeLessThanOrEqual(t.width);
-      expect(p.y + t.trackHalfWidth).toBeLessThanOrEqual(t.height);
-    }
+  it("generates one theme per THEMES entry in lobby", () => {
+    const s = createInitialState(1);
+    const themeSet = new Set(s.lobbyTracks.map((t) => t.theme));
+    expect(themeSet.size).toBe(THEMES.length);
   });
 
   it("spawns one start position per racer", () => {
-    expect(generateTrack(5).startGrid).toHaveLength(RACER_COUNT);
+    const t = generateTrack(5, "le-minou");
+    expect(t.startGrid).toHaveLength(RACER_COUNT);
+  });
+
+  it("start and finish are within course bounds", () => {
+    for (const theme of THEMES) {
+      const t = generateTrack(99, theme);
+      expect(Math.abs(t.start.x)).toBeLessThan(t.width / 2);
+      expect(t.start.y).toBeGreaterThanOrEqual(0);
+      expect(t.start.y).toBeLessThanOrEqual(t.length);
+      expect(Math.abs(t.finish.x)).toBeLessThan(t.width / 2);
+      expect(t.finish.y).toBeGreaterThanOrEqual(0);
+      expect(t.finish.y).toBeLessThanOrEqual(t.length);
+    }
   });
 });
 
-describe("loop geometry", () => {
-  const t = generateTrack(123);
-
-  it("nearestOnLoop puts a centerline point at ~0 lateral", () => {
-    const v = t.loop[10];
-    const proj = nearestOnLoop(t, v);
-    expect(Math.abs(proj.lateral)).toBeLessThan(1e-6);
-    expect(proj.t).toBeGreaterThanOrEqual(0);
-    expect(proj.t).toBeLessThan(1);
+describe("heightAt", () => {
+  it("trez-hir stays nearly flat (small amplitude)", () => {
+    const t = generateTrack(1, "trez-hir");
+    const heights: number[] = [];
+    for (let x = -20; x <= 20; x += 5)
+      for (let z = 0; z <= 90; z += 10)
+        heights.push(heightAt(t, x, z));
+    const range = Math.max(...heights) - Math.min(...heights);
+    expect(range).toBeLessThan(6);
   });
 
-  it("loopPointAt(0) is the start vertex and wraps at 1", () => {
-    expect(loopPointAt(t, 0)).toEqual(t.loop[0]);
-    expect(loopPointAt(t, 1)).toEqual(loopPointAt(t, 0));
+  it("bertheaume has much larger elevation range than trez-hir", () => {
+    const flat = generateTrack(1, "trez-hir");
+    const cliff = generateTrack(1, "bertheaume");
+    const sampleH = (track: typeof flat) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let x = -20; x <= 20; x += 5)
+        for (let z = 0; z <= 90; z += 10) {
+          const h = heightAt(track, x, z);
+          if (h < lo) lo = h;
+          if (h > hi) hi = h;
+        }
+      return hi - lo;
+    };
+    expect(sampleH(cliff)).toBeGreaterThan(sampleH(flat));
+  });
+});
+
+describe("progressAlongPath", () => {
+  const t = generateTrack(123, "le-minou");
+
+  it("start position has near-zero progress", () => {
+    const p = progressAlongPath(t, t.path[0]);
+    expect(p).toBeCloseTo(0, 2);
   });
 
-  it("tangentAt returns a unit vector", () => {
-    expect(V.len(tangentAt(t, 0.3))).toBeCloseTo(1, 6);
+  it("finish position has near-1 progress", () => {
+    const p = progressAlongPath(t, t.path[t.path.length - 1]);
+    expect(p).toBeCloseTo(1, 2);
   });
 
-  it("offsetFromCenter is ~0 on the centerline", () => {
-    expect(offsetFromCenter(t, t.loop[20])).toBeLessThan(1e-6);
+  it("increases monotonically along the path", () => {
+    let prev = -1;
+    for (let i = 0; i < t.path.length; i++) {
+      const p = progressAlongPath(t, t.path[i]);
+      expect(p).toBeGreaterThan(prev);
+      prev = p;
+    }
+  });
+});
+
+describe("pathPointAt", () => {
+  const t = generateTrack(7, "trez-hir");
+
+  it("t=0 returns a point near the start", () => {
+    const p = pathPointAt(t, 0);
+    expect(V.dist(p, t.start)).toBeLessThan(2);
   });
 
-  it("progress (loop param) advances as you move forward along the loop", () => {
-    const early = loopPointAt(t, 0.2);
-    const later = loopPointAt(t, 0.5);
-    expect(progressFor(t, later)).toBeGreaterThan(progressFor(t, early));
+  it("t=1 returns a point near the finish", () => {
+    const p = pathPointAt(t, 1);
+    expect(V.dist(p, t.finish)).toBeLessThan(2);
+  });
+});
+
+describe("atFinish / isOffCourse", () => {
+  const t = generateTrack(42, "trez-hir");
+
+  it("finish zone detects marbles at the finish", () => {
+    expect(atFinish(t, t.finish)).toBe(true);
+    expect(atFinish(t, { x: t.finish.x, y: t.finish.y - 2 })).toBe(true);
   });
 
-  it("detects a marble pushed past the berm", () => {
-    const center = loopPointAt(t, 0.4);
-    const leftN = V.perp(tangentAt(t, 0.4));
-    const inside = V.add(center, V.scale(leftN, t.laneHalfWidth * 0.5));
-    const beyond = V.add(center, V.scale(leftN, t.trackHalfWidth + 12));
-    expect(isPastBerm(t, inside)).toBe(false);
-    expect(isPastBerm(t, beyond)).toBe(true);
+  it("does not trigger finish at the start", () => {
+    expect(atFinish(t, t.start)).toBe(false);
   });
 
-  it("detects leaving the board", () => {
-    expect(isOffBoard(t, { x: -5, y: 100 })).toBe(true);
-    expect(isOffBoard(t, loopPointAt(t, 0.1))).toBe(false);
+  it("isOffCourse catches marbles that have left the beach", () => {
+    expect(isOffCourse(t, { x: t.width, y: t.length / 2 })).toBe(true);
+    expect(isOffCourse(t, { x: 0, y: -5 })).toBe(true);
+  });
+
+  it("does not flag the centerline as off course", () => {
+    for (const p of t.path) {
+      expect(isOffCourse(t, p)).toBe(false);
+    }
   });
 });

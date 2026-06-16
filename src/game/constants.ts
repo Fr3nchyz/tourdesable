@@ -1,88 +1,148 @@
 // ============================================================================
-// tour-de-sable — physics & gameplay tuning constants
-// Centralised so game feel can be tuned in one place.
+// tour-de-sable — tuning constants (v3: real Rapier physics, A→B coastal courses)
+// The world is in metres. The course runs along +Z (start near z=0, finish near
+// z=COURSE_LENGTH); width is along X; +Y is up.
 // ============================================================================
-
-// --- Board ---
-// Squarer board so the dug circuit (closed loop) reads well.
-export const BOARD_WIDTH = 1200;
-export const BOARD_HEIGHT = 1200;
-
-// --- Circuit / laps ---
-/** Laps to win the race. */
-export const LAPS_TO_WIN = 1;
-/** Half-width of the full drivable channel (centerline -> berm foot). */
-export const TRACK_HALF_WIDTH = 92;
-/** Velocity retained after a marble is deflected by a low berm bank. */
-export const BERM_DAMPING = 0.6;
-/** Speed at/above which a marble clears (flies over) the low berm -> tipped. */
-export const BERM_CLEAR_SPEED = 9;
-
-// --- Marble ---
-export const MARBLE_RADIUS = 16;
-export const MARBLE_MASS = 1;
-
-// --- Friction (per-frame velocity drain: v *= (1 - coeff)) ---
-/** Baseline soft-sand rolling resistance in the racing lane. Heavy by design. */
-export const BASE_FRICTION = 0.03;
-/** Dry sand shoulder: 2x baseline (rapid speed drain). */
-export const SHOULDER_FRICTION = BASE_FRICTION * 2;
-/** Kelp: 10x baseline (effective instant stop on contact). */
-export const KELP_FRICTION = BASE_FRICTION * 10;
-/** Waterlogged sand after a wave: near-zero (hydroplane). */
-export const WATERLOGGED_FRICTION = 0.003;
-
-/** A marble is considered stopped below this speed. */
-export const STOP_THRESHOLD = 0.05;
-
-// --- Ripples ---
-/** Angular tolerance (radians) for "moving with" the ripple direction. */
-export const RIPPLE_ALIGN_TOLERANCE = Math.PI / 6; // 30deg
-/** Moving with the ripple: -15% drag (acts as +15% acceleration aid). */
-export const RIPPLE_WITH_DRAG_MULT = 0.85;
-/** Moving against/across: +20% drag penalty. */
-export const RIPPLE_AGAINST_DRAG_MULT = 1.2;
-/** Micro-bounce wobble when crossing ripples, applied as a small heading
- *  rotation (radians) so it perturbs trajectory without adding energy. */
-export const RIPPLE_WOBBLE = 0.08;
-
-// --- Launch ---
-/** Max impulse speed at 100% power (px/frame). */
-export const MAX_LAUNCH_SPEED = 22;
-/** Max drag distance (px) that maps to 100% power. */
-export const MAX_DRAG_DISTANCE = 220;
-
-// --- Collision: Pocket-Stealer Shunt ---
-/** Fraction of incoming velocity transferred to the struck marble. */
-export const SHUNT_TRANSFER = 0.7;
-
-// --- Rogue wave ---
-/** Wave checks begin at this round. */
-export const WAVE_START_ROUND = 3;
-/** Flat per-round trigger chance once eligible. */
-export const WAVE_CHANCE = 0.2;
-/** Fraction of board height (from bottom) the wave/aftermath covers. */
-export const WAVE_ZONE_FRACTION = 0.4;
-/** Pixels a caught marble is pushed back (toward start = +y). */
-export const WAVE_PUSHBACK = 100;
-/** Complete rounds the waterlogged aftermath persists. */
-export const WAVE_AFTERMATH_ROUNDS = 2;
-/** Temporary obstacles spawned in the aftermath zone. */
-export const WAVE_AFTERMATH_OBSTACLES = 3;
-
-// --- Particles / effects ---
-export const SAND_BURST_MIN = 8;
-export const SAND_BURST_MAX = 12;
-export const SCREEN_SHAKE_PX = 2;
 
 // --- Racer roster ---
 export const RACER_COUNT = 4; // 1 human + 3 bots
 export const RACER_COLORS = ["#e63946", "#457b9d", "#f4a261", "#2a9d8f"];
 
-// --- 3D world mapping ---
-/** Board px -> world units. Board ~1200 => ~60 world units across. */
-export const WORLD_SCALE = 0.05;
-/** Visual berm height in world units (low banks the marble can clear). */
-export const BERM_HEIGHT = 1.1;
-/** Visual depth the channel floor sits below the surrounding sand. */
-export const CHANNEL_DEPTH = 0.35;
+// --- Marble (rigid body) ---
+export const MARBLE_RADIUS = 0.45;
+/** Sand drag: linear damping so marbles roll then settle. */
+export const MARBLE_LINEAR_DAMPING = 0.7;
+export const MARBLE_ANGULAR_DAMPING = 0.7;
+export const MARBLE_FRICTION = 0.95;
+export const MARBLE_RESTITUTION = 0.08;
+/** Extra downward force (N/step) keeping the marble pressed into terrain contours. */
+export const MARBLE_DOWNFORCE = 6.0;
+
+// --- Flick / launch ---
+/** Impulse magnitude at 100% power. */
+export const MAX_IMPULSE = 17;
+/** Drag distance (world metres) that maps to 100% power. */
+export const MAX_DRAG_WORLD = 12;
+
+// --- Turn resolution ---
+/** Below this speed (m/s) a marble counts as at rest. */
+export const SLEEP_SPEED = 0.18;
+/** Consecutive settled frames required before the turn resolves. */
+export const SETTLE_FRAMES = 14;
+/** Hard cap on a single shot's simulation before forcing a settle (ms). */
+export const MAX_SETTLE_MS = 7000;
+
+// --- Physics world ---
+/** Gentle gravity: slopes influence the marble, damping prevents runaway. */
+export const GRAVITY = -20;
+
+// --- Surface displacement engine (material-driven sand feel) ---
+// surface.ts samples these each frame and pushes effective damping / lateral
+// force into the Rapier body. baseFriction ≈ the old MARBLE_LINEAR_DAMPING, so
+// behaviour is preserved when grain / trails / sink contribute nothing.
+import type { SurfaceMaterial, Zone } from "./types";
+
+/** Dry beach sand (Blancs-Sablons primary) — the carved racing channel. */
+export const SAND_MATERIAL: SurfaceMaterial = {
+  baseFriction: 0.7,
+  grainResistance: 0.4,
+  deformationFactor: 0.5,
+};
+
+// --- Coastal geology zones (B3) ---
+// Beyond the carved channel the sand is loose and draggy; close to rocks the
+// ground is hard granite — slick and skittish. zoneAt() in surface.ts classifies
+// each ground patch, and ZONE_MATERIAL / ZONE_FRICTION turn that into feel.
+
+/** Loose pushed-up berm sand: high drag punishes lines that stray off the channel. */
+export const LOOSE_SAND_BERM_MATERIAL: SurfaceMaterial = {
+  baseFriction: 1.4,
+  grainResistance: 0.5,
+  deformationFactor: 0.2,
+};
+
+/** Granite apron around rocks: hard, slick, low drag, does not hold a carve. */
+export const GRANITE_ROCK_MATERIAL: SurfaceMaterial = {
+  baseFriction: 0.28,
+  grainResistance: 0.12,
+  deformationFactor: 0,
+};
+
+export const ZONE_MATERIAL: Record<Zone, SurfaceMaterial> = {
+  sand: SAND_MATERIAL,
+  loose_sand_berm: LOOSE_SAND_BERM_MATERIAL,
+  granite_rock: GRANITE_ROCK_MATERIAL,
+};
+
+/** Collider grip (Rapier friction) per zone — granite is slick, berm grabby. */
+export const ZONE_FRICTION: Record<Zone, number> = {
+  sand: 0.9,
+  loose_sand_berm: 1.0,
+  granite_rock: 0.3,
+};
+
+/** Extra radius (m) of the hard granite apron beyond a rock's footprint. */
+export const GRANITE_MARGIN = 0.9;
+
+/** "Sink-to-stop": extra damping added as speed→0 (the settling "thud"). */
+export const SINK_GAIN = 1.0;
+/** Speed (m/s) e-fold of the sink ramp — smaller = thud closer to rest. */
+export const SINK_SCALE = 1.1;
+/** Half-width (m) of the cambered racing lane; |x| beyond this is shoulder. */
+export const LANE_HALF_WIDTH = 5;
+
+// Grain variance: low-frequency Perlin noise so no two patches feel identical.
+/** Spatial frequency of the grain noise (cycles per metre). */
+export const GRAIN_FREQ = 0.09;
+/** Lateral micro-wobble force scale (× speed) from the grain field. */
+export const WOBBLE_GAIN = 0.008;
+/** Below this speed (m/s) grain wobble is suppressed (settle-safe). */
+export const WOBBLE_MIN_SPEED = 0.45;
+
+// Deformation trails ("persistent layer"): carved channels = temporary fast lanes.
+/** Turns a carved channel persists before filling back in. */
+export const TRAIL_LIFETIME = 4;
+/** Half-width (m) of a carved channel's fast lane. */
+export const TRAIL_WIDTH = 1.6;
+
+// Camber: the lane crowns at the centre, so an imprecise launch drifts to a
+// shoulder. Modelled as a speed-scaled lateral force ∝ offset from lane centre.
+/** Lateral camber force scale (× normalised offset × speed). */
+export const CAMBER_GAIN = 0;
+/** Below this speed (m/s) camber is suppressed (settle-safe). */
+export const CAMBER_MIN_SPEED = 0.3;
+
+// Launch "tension": the aim arrow strains (jitters) as power approaches max.
+/** Aim power above which the arrow visibly jitters. */
+export const TENSION_THRESHOLD = 0.82;
+/** Peak jitter amplitude (world m) at full power. */
+export const TENSION_JITTER = 0.14;
+
+// --- Course (metres) ---
+// Wide beach so the carved channel can carve genuine 40–55° sweeping turns
+// (the path swings up to ±14m); the channel itself stays ~5m, a ribbon winding
+// across the open sand.
+export const COURSE_WIDTH = 40;
+export const COURSE_LENGTH = 190;
+/** Distance from the finish point that counts as crossing the line. */
+export const FINISH_RADIUS = 4.5;
+/** Marbles below this Y have fallen off the coast (into the sea) → reset. */
+export const SEA_LEVEL_Y = -3;
+
+// --- Camera ---
+export const CAM_MIN_DIST = 6;
+export const CAM_MAX_DIST = 60;
+
+// --- Effects ---
+export const SAND_BURST_MIN = 8;
+export const SAND_BURST_MAX = 14;
+
+// --- Map themes ---
+export const THEMES = ["trez-hir", "le-minou", "bertheaume"] as const;
+export type Theme = (typeof THEMES)[number];
+
+export const THEME_NAMES: Record<Theme, string> = {
+  "trez-hir": "Trez-Hir",
+  "le-minou": "Le Minou",
+  bertheaume: "Bertheaume",
+};

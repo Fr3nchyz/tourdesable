@@ -109,7 +109,7 @@ Key tuning constants in `src/game/constants.ts`:
 Each map is seeded and deterministic. The generator (`src/game/track.ts`):
 
 1. Places a start and finish point.
-2. Builds a wandering centerline with `PATH_POINTS = 20` waypoints. A sinusoidal bias forces S-curves; per-theme `wander` amplitude controls how dramatic they are.
+2. Builds a wandering centerline with `PATH_POINTS = 20` waypoints. A sinusoidal macro curve forces the S-curves; per-theme `curveFreq` sets the silhouette (2π = one S, 3π = 1.5 S, 4π = double S) and `curveAmp` scales how far the path swings, plus a 15% random nudge per point.
 3. Scatters rocks along the course, cleared from the start/finish zones.
 4. Computes terrain height via `heightAt()`: rolling dunes + slope + optional seaward cliff + carved channel depression + sand berm shoulders.
 
@@ -119,7 +119,18 @@ Each map is seeded and deterministic. The generator (`src/game/track.ts`):
 
 Three bots take turns automatically. Bot think time is `BOT_THINK_MS = 750 ms` — a small delay so turns feel natural rather than instant.
 
-Bot strategy: aim toward the path ahead of their current position with power scaled to the remaining distance to the finish. No archetype system yet — that's on the roadmap.
+Bot strategy lives in `src/game/ai.ts` as six deterministic archetypes, each returning a `Launch {dir, power}`:
+
+| Archetype | Behaviour |
+|-----------|-----------|
+| Bully | Rams the nearest opponent within range; else charges ahead |
+| Sniper | Sweeps angles for a rock-clear line, precise power |
+| Beach-comber | Erratic power and aim wobble |
+| Navigator | Sniper when leading, Bully when trailing |
+| Coast-Glider | Hugs the racing line at efficient low power |
+| Daredevil | Full power toward a finish/path blend |
+
+`computeLaunch` dispatches by `self.botType`. (Per-opponent assignment in `GameCanvas` is still being finalised.)
 
 ---
 

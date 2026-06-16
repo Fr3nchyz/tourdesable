@@ -134,20 +134,20 @@ Each course is fully deterministic from a `(seed, theme)` pair. Running `generat
 
 **Steps:**
 1. Place `start` and `finish` points near the Z ends of the course.
-2. Generate `PATH_POINTS = 20` waypoints along the centerline. Each intermediate point is offset by:
-   - A **sinusoidal bias**: `sin(i/PATH_POINTS * π * 3.5) * width * wander * 0.55` — forces ~3.5 direction reversals (S-curves)
-   - **Random noise**: `randRange(-width * wander * 0.45, +width * wander * 0.45)` — adds variety
-   - Points are clamped 2m from the course edges.
+2. Generate `PATH_POINTS = 20` waypoints along the centerline. Each interior point's X is `linear baseline + macro curve + random nudge`, clamped 2m from the course edges:
+   - **Macro curve**: `sin(t * curveFreq) * maxSwing`, where `maxSwing = (width/2 − 3) * curveAmp`. Per-theme `curveFreq` sets the silhouette — `2π` = one S (Trez-Hir), `3π` = 1.5 S (Le Minou), `4π` = double S (Bertheaume). `curveAmp` scales how far the path swings.
+   - **Random nudge**: `randRange(-maxSwing * 0.15, +maxSwing * 0.15)` — 15% micro-variation so each seed is unique without losing the macro shape.
+   - The first and last points take zero offset (anchored to start/finish).
 3. Scatter rocks (count and size are theme-specific), clearing start/finish zones.
 4. Build the `ElevationField` (theme-specific amplitude, frequency, cliff, slope).
 
-**`heightAt(track, x, z)`** computes world Y at any ground point:
-- Base slope along Z
-- Rolling dunes (two sine waves at different frequencies)
-- Seaward cliff rising toward +X (le-minou and bertheaume only)
-- **Carved channel**: parabolic dip (−0.4m) centered on the path centerline
-- **Sand berm shoulders**: smooth bump (+0.5m peak) 5–9m from centerline
-- **Micro-bumps**: high-frequency sine (`0.12 * sin(x*3.1 + z*2.3)`) for hand-crafted texture
+**`heightAt(track, x, z)`** computes world Y at any ground point, layered in order:
+- **Macro profile**: a constant `base` height plus a per-theme set of Gaussian peaks/valleys (`macroProfile`). This is the Tour-de-France stage-profile elevation (plains → cols → descents) and **replaced the old linear slope** (`slope = 0` on every theme now).
+- **Rolling dunes**: two sine waves (`amp`, `freq`) for texture riding on top of the macro profile
+- **Seaward cliff** rising toward the +X edge when `cliffAmp > 0` (le-minou and bertheaume only)
+- **Carved channel**: parabolic dip (−0.4m) centered on the path centerline (half-width 5m)
+- **Sand berm shoulders**: smooth bump 5–9m from centerline
+- **Micro-bumps**: high-frequency sine (`0.12 * sin(x*3.1 + z*2.3 + seed)`) for hand-crafted texture
 
 ---
 
@@ -155,23 +155,28 @@ Each course is fully deterministic from a `(seed, theme)` pair. Running `generat
 
 All three are real locations on the Crozon/Plouzané coastline of Brittany.
 
+Each theme also carries a `base` height (lifts valley floors above the sea-reset line) and a `macroProfile` of Gaussian peaks/valleys that gives it a distinct Tour-de-France stage character.
+
 ### Trez-Hir (map 1) — Easy
-Calm wide beach on the Crozon peninsula. Gentle rolling dunes, no cliff. Good for learning the flick mechanic.
-- `elevation`: amp=0.35, freq=0.14, cliffAmp=0, slope=1
-- `wander`: 0.55
-- `rockCount`: 4–7 small rocks
+Calm wide beach on the Crozon peninsula. Gentle rolling dunes, no cliff. Good for learning the flick mechanic. Macro shape: gentle C/S.
+- `elevation`: amp=0.35, freq=0.14, cliffAmp=0, slope=0
+- `base`: 1.5 · `macroProfile`: broad crest at ~45% (+3.5), shallow dip at ~72% (−1.6) — *"flat stage with a col"*
+- `curveFreq`: 2π (one full S, ~18° sweeps) · `curveAmp`: 0.55
+- `rockCount`: 4–7 small rocks (radius 0.8–1.6, height 0.6–1.2)
 
 ### Le Minou (map 2) — Medium
-Headland beach near Plouzané with a lighthouse. Rolling hills and a seaward cliff rising on the +X side.
-- `elevation`: amp=0.9, freq=0.17, cliffAmp=1.6, slope=2.5
-- `wander`: 0.68
-- `rockCount`: 6–10 medium rocks
+Headland beach near Plouzané with a lighthouse. Rolling hills and a seaward cliff rising on the +X side. Macro shape: 1.5 S.
+- `elevation`: amp=0.9, freq=0.17, cliffAmp=1.6, slope=0
+- `base`: 2.5 · `macroProfile`: headland summit ~36% (+6.0), valley ~58% (−2.2), bump ~80% (+2.5) before the cliff descent — *"coastal summit finish"*
+- `curveFreq`: 3π (1.5 S, ~32° sweeps) · `curveAmp`: 0.72
+- `rockCount`: 6–10 medium rocks (radius 1.0–2.2, height 1.0–2.4)
 
 ### Bertheaume (map 3) — Hard
-Fort de Bertheaume on a rocky promontory. Dramatic elevation changes, steep cliff, demanding curves.
-- `elevation`: amp=2.6, freq=0.2, cliffAmp=9, slope=5
-- `wander`: 0.62
-- `rockCount`: 10–15 large rocks
+Fort de Bertheaume on a rocky promontory. Dramatic elevation changes, steep cliff, demanding curves. Macro shape: double S.
+- `elevation`: amp=2.0, freq=0.2, cliffAmp=9, slope=0
+- `base`: 3.5 · `macroProfile`: first col ~26% (+8.0), deep saddle ~46% (−2.8), second col ~62% (+5.5), descent valley ~84% (−2.5) — *"alpine queen stage"*
+- `curveFreq`: 4π (double S, ~43° committed sweeps) · `curveAmp`: 0.82
+- `rockCount`: 10–15 large rocks (radius 1.4–3.2, height 2.0–5.0)
 
 ---
 
@@ -185,8 +190,9 @@ Fort de Bertheaume on a rocky promontory. Dramatic elevation changes, steep clif
 | `MAX_DRAG_WORLD` | 12 | Drag distance (m) that maps to 100% power |
 | `MARBLE_LINEAR_DAMPING` | 0.7 | Base sand drag |
 | `MARBLE_ANGULAR_DAMPING` | 0.7 | Prevents excessive spin |
-| `MARBLE_FRICTION` | 0.9 | |
-| `MARBLE_RESTITUTION` | 0.35 | Mild bounce off rocks/berms |
+| `MARBLE_FRICTION` | 0.95 | High grip — rolls, doesn't skid |
+| `MARBLE_RESTITUTION` | 0.08 | Near-dead bounce — the marble thuds, doesn't bounce |
+| `MARBLE_DOWNFORCE` | 6.0 N/step | Extra downward force pressing the marble into terrain contours |
 | `SLEEP_SPEED` | 0.18 m/s | Below this = "at rest" |
 | `SETTLE_FRAMES` | 14 | Consecutive rest frames before turn ends |
 | `MAX_SETTLE_MS` | 7000 | Hard timeout so turns never hang |
@@ -246,7 +252,7 @@ Uses `drei`'s `OrbitControls`. Key behaviors:
 
 ## 13. Known Issues & Quirks
 
-- **Bot AI is minimal**: bots aim toward the path ahead and scale power by remaining distance. No archetypes, no risk-taking, no obstacle avoidance. Old README described 6 archetypes — not implemented in the 3D version yet.
+- **Bot AI archetypes exist but may not be fully wired**: `src/game/ai.ts` implements six deterministic archetypes — Bully, Sniper, Beach-comber, Navigator, Coast-Glider, Daredevil (`computeLaunch` dispatches by `self.botType`), with rock-clear ray-marching (`pathClear`) and placement awareness. They are unit-tested in `ai.test.ts`. What is unverified is whether `GameCanvas.tsx` assigns a `botType` per opponent and routes turns through `computeLaunch` — confirm the live wiring there before assuming bots are dumb or smart.
 - **Cyclist falls sideways on steep Bertheaume terrain**: the ball collider slides on steep slopes and the cyclist tips. `lockRotations` prevents spinning but not leaning — this is a visual quirk, not a physics bug.
 - **Off-course respawn** snaps to path centerline immediately. Original intent was to move the cyclist "one marble's width" toward center per turn (gradual rescue), not instant teleport.
 - **No audio yet**: the ESC menu has a sound toggle and volume slider; the audio engine (`audio.ts`) exists but isn't producing music. Ocean ambient and flick sounds are stubbed.
@@ -263,7 +269,7 @@ Uses `drei`'s `OrbitControls`. Key behaviors:
 - [ ] Basic ambient audio (ocean, sand crunch on settle)
 
 ### Mid-term
-- [ ] Bot AI archetypes (Bully, Sniper, Navigator, Beach-Comber, Coast-Glider, Daredevil)
+- [ ] Finish wiring + tuning the bot AI archetypes (the six are implemented in `ai.ts`; confirm per-opponent assignment in `GameCanvas.tsx`)
 - [ ] Lobby map preview thumbnail (mini top-down render of the course)
 - [ ] Cyclist animation: lean forward during shot, pedaling legs when moving
 - [ ] Victory screen with podium and confetti
@@ -282,7 +288,7 @@ Uses `drei`'s `OrbitControls`. Key behaviors:
 
 **To change physics feel:** edit `src/game/constants.ts`. All tuning is centralized there.
 
-**To change a map:** edit `THEME_PARAMS` in `src/game/track.ts`. `wander` controls curviness, `elevation.*` controls terrain shape, `rockCount/rockRadius/rockHeight` control obstacles.
+**To change a map:** edit `THEME_PARAMS` in `src/game/track.ts`. `curveFreq`/`curveAmp` control the path's S-curve silhouette and swing, `macroProfile`/`base`/`elevation.*` control terrain shape, `rockCount/rockRadius/rockHeight` control obstacles.
 
 **To change the cyclist model:** edit `src/render3d/Cyclist.tsx`. All geometry is inline primitives — no external files to manage.
 

@@ -6,7 +6,7 @@
 // the physics body and the rendered sand mesh.
 // ============================================================================
 
-import { useMemo, useEffect } from "react";
+import { memo, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { RigidBody, TrimeshCollider } from "@react-three/rapier";
 import type { Track, Zone } from "@/game/types";
@@ -175,7 +175,7 @@ function buildTerrain(track: Track): TerrainData {
 
 // --- component --------------------------------------------------------------
 
-export default function Terrain({ track }: { track: Track }) {
+function Terrain({ track }: { track: Track }) {
   const { geometry, vertices, indices } = useMemo(() => buildTerrain(track), [track]);
   const textures = useMemo(() => buildSandTextures(), []);
 
@@ -212,3 +212,7 @@ export default function Terrain({ track }: { track: Track }) {
     </>
   );
 }
+
+// Memoized: terrain only rebuilds when the track changes, so it should never
+// reconcile on the per-shot UI re-renders (aim show/hide, settle).
+export default memo(Terrain);

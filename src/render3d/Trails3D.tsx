@@ -4,11 +4,12 @@
 // deformation layer. Each TrailSegment is drawn as a thin darkened scuff laid
 // on the terrain, fading as the channel fills back in (turnsLeft → 0).
 
+import { memo } from "react";
 import type { Track, TrailSegment } from "@/game/types";
 import { heightAt } from "@/game/track";
 import { TRAIL_WIDTH, TRAIL_LIFETIME } from "@/game/constants";
 
-export default function Trails3D({
+function Trails3D({
   track,
   trails,
 }: {
@@ -53,3 +54,6 @@ export default function Trails3D({
     </>
   );
 }
+
+// Memoized: trails only change on settle (new array ref), not during aiming.
+export default memo(Trails3D);

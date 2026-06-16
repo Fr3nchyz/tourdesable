@@ -9,7 +9,7 @@
 // Idle racers   → Cyclist figurines placed on the terrain surface.
 // ============================================================================
 
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { Group } from "three";
 import { RigidBody, CylinderCollider, BallCollider } from "@react-three/rapier";
@@ -226,7 +226,7 @@ export interface Racers3DProps {
   onSettle: (carvedPath: Vector2D[]) => void;
 }
 
-export default function Racers3D({
+function Racers3D({
   racers,
   activeId,
   marbleKey,
@@ -288,3 +288,7 @@ export default function Racers3D({
     </group>
   );
 }
+
+// Memoized: props are stable within a turn (callbacks are useCallback'd, refs
+// are stable), so the aim show/hide re-renders no longer reconcile the racers.
+export default memo(Racers3D);

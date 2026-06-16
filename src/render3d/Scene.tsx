@@ -43,7 +43,7 @@ export interface SceneProps {
   marbleKey: string;
   trails: TrailSegment[];
   inPhysics: boolean;
-  aim: AimState | null;
+  aimRef: React.RefObject<AimState | null>;
   isAiming: boolean;
   impulseRef: React.RefObject<Impulse3D | null>;
   recenterRef: React.RefObject<boolean>;
@@ -54,29 +54,44 @@ export interface SceneProps {
   onAimUp: () => void;
 }
 
-/** Aim arrow from the marble in the launch direction. */
+/**
+ * Aim arrow from the marble in the launch direction.
+ * Driven imperatively from `aimRef` in useFrame — while dragging, aim updates
+ * mutate the ref only (no React state), so the scene never re-renders per move.
+ * A unit-length shaft is scaled on X so length changes need no new geometry.
+ */
 function AimArrow({
   origin,
-  aim,
+  aimRef,
 }: {
   origin: [number, number, number];
-  aim: AimState;
+  aimRef: React.RefObject<AimState | null>;
 }) {
   const groupRef = useRef<Group>(null);
+  const shaftRef = useRef<THREE.Mesh>(null);
+  const coneRef = useRef<THREE.Mesh>(null);
   const baseX = origin[0];
   const baseY = origin[1] + MARBLE_RADIUS + 0.1;
   const baseZ = origin[2];
 
-  // Tension curve: the last bit of drag "strains" — length eases toward max so
-  // power feels harder to add near full power.
-  const len = Math.pow(aim.power, 1.4) * MAX_DRAG_WORLD * 0.85;
-  const heading = Math.atan2(-aim.dir.y, aim.dir.x);
-  const color = aim.power > 0.8 ? "#e63946" : aim.power > 0.5 ? "#f4a261" : "#2a9d8f";
-
-  // Near max power the arrow jitters to signal physical strain.
   useFrame(() => {
     const g = groupRef.current;
-    if (!g) return;
+    const shaft = shaftRef.current;
+    const cone = coneRef.current;
+    if (!g || !shaft || !cone) return;
+    const aim = aimRef.current;
+    if (!aim) {
+      g.visible = false;
+      return;
+    }
+    g.visible = true;
+
+    // Tension curve: the last bit of drag "strains" — length eases toward max so
+    // power feels harder to add near full power.
+    const len = Math.pow(aim.power, 1.4) * MAX_DRAG_WORLD * 0.85;
+    g.rotation.set(0, Math.atan2(-aim.dir.y, aim.dir.x), 0);
+
+    // Near max power the arrow jitters to signal physical strain.
     if (aim.power > TENSION_THRESHOLD) {
       const k =
         ((aim.power - TENSION_THRESHOLD) / (1 - TENSION_THRESHOLD)) *
@@ -89,17 +104,26 @@ function AimArrow({
     } else {
       g.position.set(baseX, baseY, baseZ);
     }
+
+    shaft.scale.x = Math.max(0.0001, len);
+    shaft.position.x = len / 2;
+    cone.position.x = len;
+
+    const color = aim.power > 0.8 ? "#e63946" : aim.power > 0.5 ? "#f4a261" : "#2a9d8f";
+    (shaft.material as THREE.MeshBasicMaterial).color.set(color);
+    (cone.material as THREE.MeshBasicMaterial).color.set(color);
   });
 
   return (
-    <group ref={groupRef} position={[baseX, baseY, baseZ]} rotation={[0, heading, 0]}>
-      <mesh position={[len / 2, 0, 0]}>
-        <boxGeometry args={[len, 0.08, 0.5]} />
-        <meshBasicMaterial color={color} transparent opacity={0.85} />
+    <group ref={groupRef} position={[baseX, baseY, baseZ]} visible={false}>
+      {/* Unit-length shaft (1m on X); scaled to `len` each frame. */}
+      <mesh ref={shaftRef}>
+        <boxGeometry args={[1, 0.08, 0.5]} />
+        <meshBasicMaterial color="#2a9d8f" transparent opacity={0.85} />
       </mesh>
-      <mesh position={[len, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+      <mesh ref={coneRef} rotation={[0, 0, -Math.PI / 2]}>
         <coneGeometry args={[0.55, 1.0, 10]} />
-        <meshBasicMaterial color={color} transparent opacity={0.9} />
+        <meshBasicMaterial color="#2a9d8f" transparent opacity={0.9} />
       </mesh>
     </group>
   );
@@ -114,33 +138,54 @@ function AimArrow({
 function TrajectoryPreview({
   track,
   origin,
-  aim,
+  aimRef,
 }: {
   track: Track;
   origin: [number, number, number];
-  aim: AimState;
+  aimRef: React.RefObject<AimState | null>;
 }) {
   const STEPS = 16;
   const DT = 0.09;
   const V0_MAX = 26; // m/s at full power — tuned by feel, not derived.
-  const beads: [number, number, number][] = [];
-  let px = origin[0];
-  let pz = origin[2];
-  let vx = aim.dir.x * aim.power * V0_MAX;
-  let vz = aim.dir.y * aim.power * V0_MAX;
-  for (let i = 0; i < STEPS; i++) {
-    vx *= 1 - MARBLE_LINEAR_DAMPING * DT;
-    vz *= 1 - MARBLE_LINEAR_DAMPING * DT;
-    px += vx * DT;
-    pz += vz * DT;
-    beads.push([px, heightAt(track, px, pz) + MARBLE_RADIUS * 0.6, pz]);
-  }
+  const groupRef = useRef<Group>(null);
+  const beadRefs = useRef<(THREE.Mesh | null)[]>([]);
+
+  // Bead positions are recomputed each frame from `aimRef` (no re-render); the
+  // group hides itself when there's no meaningful aim.
+  useFrame(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    const aim = aimRef.current;
+    if (!aim || aim.power <= 0.02) {
+      g.visible = false;
+      return;
+    }
+    g.visible = true;
+    let px = origin[0];
+    let pz = origin[2];
+    let vx = aim.dir.x * aim.power * V0_MAX;
+    let vz = aim.dir.y * aim.power * V0_MAX;
+    for (let i = 0; i < STEPS; i++) {
+      vx *= 1 - MARBLE_LINEAR_DAMPING * DT;
+      vz *= 1 - MARBLE_LINEAR_DAMPING * DT;
+      px += vx * DT;
+      pz += vz * DT;
+      const m = beadRefs.current[i];
+      if (m) m.position.set(px, heightAt(track, px, pz) + MARBLE_RADIUS * 0.6, pz);
+    }
+  });
+
   return (
-    <group>
-      {beads.map((p, i) => {
+    <group ref={groupRef} visible={false}>
+      {Array.from({ length: STEPS }).map((_, i) => {
         const f = 1 - i / STEPS; // shrink toward the end
         return (
-          <mesh key={i} position={p}>
+          <mesh
+            key={i}
+            ref={(el) => {
+              beadRefs.current[i] = el;
+            }}
+          >
             <sphereGeometry args={[0.12 + 0.1 * f, 10, 10]} />
             {/* Cheap translucent glass look — avoids a transmission render pass,
                 which can lose the WebGL context when stacked with DepthOfField. */}
@@ -205,7 +250,7 @@ export default function Scene({
   marbleKey,
   trails,
   inPhysics,
-  aim,
+  aimRef,
   isAiming,
   impulseRef,
   recenterRef,
@@ -300,13 +345,13 @@ export default function Scene({
       {/* Finish beacon */}
       <FinishBeacon track={track} />
 
-      {/* Aim arrow + glass-bead trajectory preview (slingshot) */}
-      {aim && !inPhysics && (
+      {/* Aim arrow + glass-bead trajectory preview (slingshot). Mounted for the
+          whole drag; both self-hide via `visible` and update from aimRef in
+          useFrame, so moving the pointer triggers no React re-render. */}
+      {isAiming && !inPhysics && (
         <>
-          <AimArrow origin={aimOrigin} aim={aim} />
-          {aim.power > 0.02 && (
-            <TrajectoryPreview track={track} origin={aimOrigin} aim={aim} />
-          )}
+          <AimArrow origin={aimOrigin} aimRef={aimRef} />
+          <TrajectoryPreview track={track} origin={aimOrigin} aimRef={aimRef} />
         </>
       )}
 

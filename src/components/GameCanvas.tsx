@@ -22,6 +22,7 @@ import type { Impulse3D } from "@/render3d/Racers3D";
 import { audio } from "@/audio/audio";
 import { MAX_DRAG_WORLD, MARBLE_RADIUS } from "@/game/constants";
 import Scene, { type AimState } from "@/render3d/Scene";
+import CanvasErrorBoundary from "./CanvasErrorBoundary";
 import LobbyVote from "./LobbyVote";
 import HUD from "./HUD";
 import EscMenu from "./EscMenu";
@@ -32,11 +33,13 @@ const BOT_THINK_MS = 750;
 export default function GameCanvas() {
   const [view, setView] = useState<GameState>(createInitialState);
   const stateRef = useRef<GameState>(view);
-  const [aim, setAim] = useState<AimState | null>(null);
+  // Aim lives only in aimRef during a drag (read imperatively in the scene's
+  // useFrame). isAiming is the single show/hide toggle that triggers a render.
   const [isAiming, setIsAiming] = useState(false);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [glLost, setGlLost] = useState(false);
 
   const draggingRef = useRef(false);
   const aimRef = useRef<AimState | null>(null);
@@ -60,16 +63,16 @@ export default function GameCanvas() {
   const handleReplay = useCallback(() => {
     stateRef.current = createInitialState();
     impulseRef.current = null;
-    setAim(null);
     aimRef.current = null;
+    setIsAiming(false);
     publish();
   }, [publish]);
 
   const handleResetMap = useCallback(() => {
     stateRef.current = restartCurrentTrack(stateRef.current);
     impulseRef.current = null;
-    setAim(null);
     aimRef.current = null;
+    setIsAiming(false);
     recenterRef.current = true;
     setMenuOpen(false);
     publish();
@@ -78,8 +81,8 @@ export default function GameCanvas() {
   const handleLobby = useCallback(() => {
     stateRef.current = createInitialState();
     impulseRef.current = null;
-    setAim(null);
     aimRef.current = null;
+    setIsAiming(false);
     setMenuOpen(false);
     publish();
   }, [publish]);
@@ -125,11 +128,9 @@ export default function GameCanvas() {
     const r = activeRacer(s);
     if (Math.hypot(ground.x - r.pos.x, ground.y - r.pos.y) > MARBLE_RADIUS * 6) return;
     draggingRef.current = true;
-    setIsAiming(true);
     audio.resume();
-    const a: AimState = { dir: { x: 0, y: 1 }, power: 0 };
-    aimRef.current = a;
-    setAim(a);
+    aimRef.current = { dir: { x: 0, y: 1 }, power: 0 };
+    setIsAiming(true);
   }, []);
 
   const onAimMove = useCallback((ground: Vector2D) => {
@@ -137,15 +138,14 @@ export default function GameCanvas() {
     const r = activeRacer(stateRef.current);
     const back = { x: r.pos.x - ground.x, y: r.pos.y - ground.y };
     const dist = Math.hypot(back.x, back.y);
-    const a: AimState =
+    // Mutate the ref only — the scene reads it in useFrame, so no re-render.
+    aimRef.current =
       dist < 0.5
         ? { dir: { x: 0, y: 1 }, power: 0 }
         : {
             dir: { x: back.x / dist, y: back.y / dist },
             power: Math.min(1, dist / MAX_DRAG_WORLD),
           };
-    aimRef.current = a;
-    setAim(a);
   }, []);
 
   const onAimUp = useCallback(() => {
@@ -154,7 +154,6 @@ export default function GameCanvas() {
     setIsAiming(false);
     const a = aimRef.current;
     aimRef.current = null;
-    setAim(null);
     if (a && a.power > 0.05) {
       const impulse = applyLaunch(stateRef.current, { dir: a.dir, power: a.power });
       impulseRef.current = impulse;
@@ -208,31 +207,56 @@ export default function GameCanvas() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-sky-200">
-      <Canvas
-        shadows
-        dpr={[1, 2]}
-        camera={{ position: [0, 40, -18], fov: 52 }}
-        // touch-action:none → touch-drag flicks aim instead of scrolling/zooming the page.
-        className="touch-none"
-      >
-        <Scene
-          track={track}
-          racers={view.racers}
-          activeId={activeId}
-          marbleKey={marbleKey}
-          trails={view.trails}
-          inPhysics={inPhysics}
-          aim={aim}
-          isAiming={isAiming}
-          impulseRef={impulseRef}
-          recenterRef={recenterRef}
-          onRacerPos={handleRacerPos}
-          onSettle={handleSettle}
-          onAimDown={onAimDown}
-          onAimMove={onAimMove}
-          onAimUp={onAimUp}
-        />
-      </Canvas>
+      <CanvasErrorBoundary onReset={handleReplay}>
+        <Canvas
+          shadows
+          dpr={[1, 2]}
+          camera={{ position: [0, 40, -18], fov: 52 }}
+          // touch-action:none → touch-drag flicks aim instead of scrolling/zooming the page.
+          className="touch-none"
+          onCreated={({ gl }) => {
+            // Context loss is a DOM event, not a thrown error — preventDefault
+            // keeps the canvas restorable and we surface a restart prompt.
+            gl.domElement.addEventListener("webglcontextlost", (e) => {
+              e.preventDefault();
+              setGlLost(true);
+            });
+          }}
+        >
+          <Scene
+            track={track}
+            racers={view.racers}
+            activeId={activeId}
+            marbleKey={marbleKey}
+            trails={view.trails}
+            inPhysics={inPhysics}
+            aimRef={aimRef}
+            isAiming={isAiming}
+            impulseRef={impulseRef}
+            recenterRef={recenterRef}
+            onRacerPos={handleRacerPos}
+            onSettle={handleSettle}
+            onAimDown={onAimDown}
+            onAimMove={onAimMove}
+            onAimUp={onAimUp}
+          />
+        </Canvas>
+      </CanvasErrorBoundary>
+
+      {glLost && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-950/80 text-center text-amber-50">
+          <p className="text-lg font-semibold">Graphics context was lost.</p>
+          <button
+            onClick={() => {
+              setGlLost(false);
+              handleReplay();
+            }}
+            className="rounded-lg bg-amber-500 px-5 py-2.5 font-medium text-slate-900 shadow-lg transition hover:bg-amber-400"
+          >
+            Tap to restart
+          </button>
+        </div>
+      )}
 
       <HUD
         state={view}

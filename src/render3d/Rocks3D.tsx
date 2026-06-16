@@ -2,11 +2,12 @@
 
 // Rock cylinder colliders + visual meshes placed on the terrain surface.
 
+import { memo } from "react";
 import { RigidBody, CylinderCollider } from "@react-three/rapier";
 import type { Track } from "@/game/types";
 import { heightAt } from "@/game/track";
 
-export default function Rocks3D({ track }: { track: Track }) {
+function Rocks3D({ track }: { track: Track }) {
   return (
     <>
       {track.rocks.map((rock, i) => {
@@ -30,3 +31,6 @@ export default function Rocks3D({ track }: { track: Track }) {
     </>
   );
 }
+
+// Memoized: rocks are static per track; skip reconciliation on UI re-renders.
+export default memo(Rocks3D);

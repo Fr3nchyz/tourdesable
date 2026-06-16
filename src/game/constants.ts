@@ -119,7 +119,10 @@ export const TENSION_THRESHOLD = 0.82;
 export const TENSION_JITTER = 0.14;
 
 // --- Course (metres) ---
-export const COURSE_WIDTH = 18;
+// Wide beach so the carved channel can carve genuine 40–55° sweeping turns
+// (the path swings up to ±14m); the channel itself stays ~5m, a ribbon winding
+// across the open sand.
+export const COURSE_WIDTH = 40;
 export const COURSE_LENGTH = 190;
 /** Distance from the finish point that counts as crossing the line. */
 export const FINISH_RADIUS = 4.5;

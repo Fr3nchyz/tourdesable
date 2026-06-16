@@ -23,7 +23,8 @@ const ZONE_TINT: Record<Zone, [number, number, number]> = {
 };
 
 // Grid resolution: more rows (Z) than cols (X) since the course is longer.
-const COLS = 20; // vertices along X (course width)
+// COLS scaled up with the wider 40m course to keep ~1m vertex spacing across X.
+const COLS = 42; // vertices along X (course width)
 const ROWS = 192; // vertices along Z (course length)
 
 const TEX_SIZE = 512;

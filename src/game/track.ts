@@ -31,11 +31,17 @@ interface MacroPeak {
 interface ThemeParams {
   elevation: Omit<ElevationField, "theme" | "seed">;
   /**
-   * Macro elevation profile: Gaussian peaks/valleys layered on top of dunes.
-   * Replaces the old linear slope — creates Tour-de-France-style mountain stages.
+   * Constant baseline height (m). Lifts the whole course so valley floors stay
+   * comfortably above the sea-reset line (SEA_LEVEL_Y) even with deep dips.
+   */
+  base: number;
+  /**
+   * Macro elevation profile: Gaussian peaks (h>0) and valleys (h<0) layered on
+   * top of the dunes. Replaces the old linear slope — creates Tour-de-France
+   * stage shapes: plains → cols → descents.
    */
   macroProfile: MacroPeak[];
-  /** Sin frequency (radians) for the macro S/C path curve. π = one arch (C), 2π = S, 4π = double-S. */
+  /** Sin frequency (radians) for the macro S/C path curve. 2π = one S, 3π = 1.5 S, 4π = double-S. */
   curveFreq: number;
   /** Amplitude of the macro curve as a fraction of (width/2 − 3). */
   curveAmp: number;
@@ -45,40 +51,47 @@ interface ThemeParams {
 }
 
 const THEME_PARAMS: Record<Theme, ThemeParams> = {
-  // "Flat stage with a col" — rolling plains rising to a broad sandy crest, then descent.
+  // "Flat stage with a col" (Easy) — low plains, one broad crest, gentle dip, gentle S.
   "trez-hir": {
     elevation: { amp: 0.35, freq: 0.14, cliffAmp: 0, slope: 0 },
+    base: 1.5,
     macroProfile: [
-      { t: 0.45, h: 3.5, sigma: 0.28 }, // one broad crest mid-course
+      { t: 0.45, h: 3.5, sigma: 0.28 }, // broad crest mid-course
+      { t: 0.72, h: -1.6, sigma: 0.16 }, // shallow valley after the crest
     ],
-    curveFreq: Math.PI * 1,   // gentle C
+    curveFreq: Math.PI * 2,   // one full S — ~18° sweeps
     curveAmp: 0.55,
     rockCount: [4, 7],
     rockRadius: [0.8, 1.6],
     rockHeight: [0.6, 1.2],
   },
-  // "Coastal summit finish" — gradual climb to a headland peak, technical sea-cliff descent.
+  // "Coastal summit finish" (Medium) — climb, drop into a valley, bump, sea-cliff descent.
   "le-minou": {
     elevation: { amp: 0.9, freq: 0.17, cliffAmp: 1.6, slope: 0 },
+    base: 2.5,
     macroProfile: [
-      { t: 0.38, h: 6.0, sigma: 0.22 }, // main headland summit
-      { t: 0.72, h: 2.5, sigma: 0.14 }, // secondary bump before the cliff descent
+      { t: 0.36, h: 6.0, sigma: 0.20 }, // headland summit
+      { t: 0.58, h: -2.2, sigma: 0.14 }, // valley between summit and bump
+      { t: 0.80, h: 2.5, sigma: 0.12 }, // bump before the cliff descent
     ],
-    curveFreq: Math.PI * 2,   // one full S
-    curveAmp: 0.75,
+    curveFreq: Math.PI * 3,   // 1.5 S — ~32° sweeps
+    curveAmp: 0.72,
     rockCount: [6, 10],
     rockRadius: [1.0, 2.2],
     rockHeight: [1.0, 2.4],
   },
-  // "Alpine queen stage" — two distinct cols, saddle between them, sprint descent to finish.
+  // "Alpine queen stage" (Hard) — two cols with a deep saddle, valley, sprint descent.
   bertheaume: {
-    elevation: { amp: 2.6, freq: 0.2, cliffAmp: 9, slope: 0 },
+    elevation: { amp: 2.0, freq: 0.2, cliffAmp: 9, slope: 0 },
+    base: 3.5,
     macroProfile: [
-      { t: 0.28, h: 8.0, sigma: 0.16 }, // first col (sharp peak)
-      { t: 0.62, h: 5.5, sigma: 0.18 }, // second col (slightly lower)
+      { t: 0.26, h: 8.0, sigma: 0.15 }, // first col (sharp peak)
+      { t: 0.46, h: -2.8, sigma: 0.12 }, // deep saddle valley
+      { t: 0.62, h: 5.5, sigma: 0.17 }, // second col
+      { t: 0.84, h: -2.5, sigma: 0.12 }, // descent valley before finish
     ],
-    curveFreq: Math.PI * 4,   // double S
-    curveAmp: 0.80,
+    curveFreq: Math.PI * 4,   // double S — ~43° committed sweeps
+    curveAmp: 0.82,
     rockCount: [10, 15],
     rockRadius: [1.4, 3.2],
     rockHeight: [2.0, 5.0],
@@ -172,7 +185,7 @@ export function heightAt(track: Track, x: number, z: number): number {
   // (Tour de France stage inspiration — flat stage / summit finish / alpine queen).
   // These replace the old linear slope and are defined per theme in THEME_PARAMS.
   const tp = THEME_PARAMS[track.theme];
-  let h = 0;
+  let h = tp.base;
   for (const peak of tp.macroProfile) {
     const dt = z / track.length - peak.t;
     h += peak.h * Math.exp(-(dt * dt) / (2 * peak.sigma * peak.sigma));

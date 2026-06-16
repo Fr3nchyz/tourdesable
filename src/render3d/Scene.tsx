@@ -223,8 +223,12 @@ export default function Scene({
     y: e.point.z,
   });
 
+  // Marble sits on the terrain surface, which can be metres above y=0 on the new
+  // elevation profiles. Anchor the aim arrow AND the pointer-pick plane at that
+  // height so clicks land on the rider instead of raycasting past it to y=0.
+  const activeGroundY = active ? heightAt(track, active.pos.x, active.pos.y) : 0;
   const aimOrigin: [number, number, number] = active
-    ? [active.pos.x, 0, active.pos.y]
+    ? [active.pos.x, activeGroundY, active.pos.y]
     : [0, 0, 0];
 
   return (
@@ -313,10 +317,11 @@ export default function Scene({
         isAiming={isAiming}
       />
 
-      {/* Invisible flat plane at y=0 for flick raycasting. */}
+      {/* Invisible flat plane at the active marble's height for flick raycasting,
+          so pointer picks line up with the rider regardless of terrain elevation. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0, 0]}
+        position={[0, activeGroundY, 0]}
         onPointerDown={(e) => {
           e.stopPropagation();
           (e.target as Element).setPointerCapture?.(e.pointerId);

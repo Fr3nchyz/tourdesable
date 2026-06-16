@@ -11,6 +11,7 @@
 
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
+import type { Group } from "three";
 import { RigidBody, CylinderCollider, BallCollider } from "@react-three/rapier";
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { Racer, Track, TrailSegment, Vector2D } from "@/game/types";
@@ -64,6 +65,7 @@ function ActiveMarble({
   onSettle,
 }: ActiveMarbleProps) {
   const rbRef = useRef<RapierRigidBody>(null);
+  const cyclistRef = useRef<Group>(null);
   const settleCount = useRef(0);
   const settleStart = useRef(0);
   const firedSettle = useRef(false);
@@ -75,9 +77,22 @@ function ActiveMarble({
   const spawnZ = racer.pos.y;
   const spawnY = heightAt(track, spawnX, spawnZ) + MARBLE_RADIUS + 0.02;
 
+  const heading = facingFinish(racer.pos, track.finish);
+
   useFrame(() => {
     const rb = rbRef.current;
-    if (!rb || firedSettle.current) return;
+    if (!rb) return;
+
+    // Keep the rider visual glued to the marble's ground position but ALWAYS
+    // upright — the marble (BallCollider) rolls underneath for physics feel; the
+    // cyclist must not tumble with it. Feet rest on the sand (body centre − radius).
+    const cy = cyclistRef.current;
+    if (cy) {
+      const t = rb.translation();
+      cy.position.set(t.x, t.y - MARBLE_RADIUS + 0.05, t.z);
+    }
+
+    if (firedSettle.current) return;
 
     // Before the player flicks: pin the body at spawn so the cyclist stands still.
     if (!inPhysics) {
@@ -149,26 +164,33 @@ function ActiveMarble({
   });
 
   return (
-    <RigidBody
-      ref={rbRef}
-      colliders={false}
-      enabledRotations={[true, false, true]}
-      ccd
-      position={[spawnX, spawnY, spawnZ]}
-      linearDamping={MARBLE_LINEAR_DAMPING}
-      angularDamping={MARBLE_ANGULAR_DAMPING}
-      friction={MARBLE_FRICTION}
-      restitution={MARBLE_RESTITUTION}
-    >
-      <BallCollider args={[MARBLE_RADIUS]} />
+    <>
+      {/* Physics marble — invisible BallCollider that rolls through the sand. */}
+      <RigidBody
+        ref={rbRef}
+        colliders={false}
+        enabledRotations={[true, false, true]}
+        ccd
+        position={[spawnX, spawnY, spawnZ]}
+        linearDamping={MARBLE_LINEAR_DAMPING}
+        angularDamping={MARBLE_ANGULAR_DAMPING}
+        friction={MARBLE_FRICTION}
+        restitution={MARBLE_RESTITUTION}
+      >
+        <BallCollider args={[MARBLE_RADIUS]} />
+      </RigidBody>
+
+      {/* Rider visual — decoupled from physics rotation, follows the marble's
+          position each frame (see useFrame) so it rides upright, never tumbles. */}
       <group
-        position={[0, -MARBLE_RADIUS + 0.05, 0]}
-        rotation={[0, facingFinish(racer.pos, track.finish), 0]}
+        ref={cyclistRef}
+        position={[spawnX, spawnY - MARBLE_RADIUS + 0.05, spawnZ]}
+        rotation={[0, heading, 0]}
         scale={0.9}
       >
         <Cyclist color={racer.color} />
       </group>
-    </RigidBody>
+    </>
   );
 }
 

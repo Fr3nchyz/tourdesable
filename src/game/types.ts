@@ -44,6 +44,12 @@ export interface Racer {
   skipNextTurn: boolean;
   /** Last in-bounds ground position — respawn anchor after falling off. */
   lastInBoundsPos: Vector2D;
+  /**
+   * Set when the marble tips off the circuit. It sits visibly on the ridge for
+   * the wasted turn; on its next (skipped) turn it re-enters just inside the
+   * ridge on the side it fell off, at the same forward progress.
+   */
+  ridge?: { progress: number; side: number };
   /** Progress toward the finish along the course path, 0..1. */
   progress: number;
   /** Set when finishing; lower = earlier. */

@@ -30,8 +30,10 @@ const track = generateTrack(2024, "trez-hir");
 const onChannel = (t: number) => pathPointAt(track, t);
 
 describe("sinkToStop", () => {
-  it("is near zero at launch speed", () => {
-    expect(sinkToStop(9)).toBeLessThan(0.01);
+  it("is negligible at launch speed", () => {
+    // Broader ramp (SINK_SCALE) means it's not vanishing at launch speed, but
+    // still tiny relative to base rolling resistance (~0.7).
+    expect(sinkToStop(9)).toBeLessThan(0.02);
   });
 
   it("peaks at the sink gain when at rest", () => {

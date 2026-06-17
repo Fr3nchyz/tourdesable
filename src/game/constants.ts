@@ -15,8 +15,9 @@ export const MARBLE_LINEAR_DAMPING = 0.7;
 export const MARBLE_ANGULAR_DAMPING = 0.7;
 export const MARBLE_FRICTION = 0.95;
 export const MARBLE_RESTITUTION = 0.08;
-/** Extra downward force (N/step) keeping the marble pressed into terrain contours. */
-export const MARBLE_DOWNFORCE = 6.0;
+/** Extra downward force (N/step) keeping the marble pressed into terrain contours.
+ * Higher = the marble stays glued through residual swells instead of taking air. */
+export const MARBLE_DOWNFORCE = 11.0;
 
 // --- Flick / launch ---
 /** Impulse magnitude at 100% power. */
@@ -29,6 +30,10 @@ export const MAX_DRAG_WORLD = 12;
 export const SLEEP_SPEED = 0.18;
 /** Consecutive settled frames required before the turn resolves. */
 export const SETTLE_FRAMES = 14;
+/** After this many consecutive slow frames, actively bleed off the marble's
+ * residual creep (zero its velocity) so it parks cleanly instead of gliding /
+ * "recalculating" around the rest threshold. */
+export const SETTLE_PARK_FRAMES = 5;
 /** Hard cap on a single shot's simulation before forcing a settle (ms). */
 export const MAX_SETTLE_MS = 7000;
 
@@ -86,8 +91,10 @@ export const GRANITE_MARGIN = 0.9;
 
 /** "Sink-to-stop": extra damping added as speed→0 (the settling "thud"). */
 export const SINK_GAIN = 1.0;
-/** Speed (m/s) e-fold of the sink ramp — smaller = thud closer to rest. */
-export const SINK_SCALE = 1.1;
+/** Speed (m/s) e-fold of the sink ramp — larger = the damping rises smoothly over
+ * a wider speed band instead of spiking right at rest (which made the marble
+ * oscillate around the settle threshold). */
+export const SINK_SCALE = 2.0;
 /** Half-width (m) of the cambered racing lane; |x| beyond this is shoulder. */
 export const LANE_HALF_WIDTH = 5;
 

@@ -13,7 +13,7 @@ import { activeRacer, startNextTurn } from "./stateMachine";
 import { computeLaunch } from "./ai";
 import { mulberry32 } from "./rng";
 import { progressAlongPath, pathPointAt, atFinish, isOffCourse } from "./track";
-import { MAX_IMPULSE, TRAIL_LIFETIME } from "./constants";
+import { MAX_IMPULSE, TRAIL_LIFETIME, LANE_HALF_WIDTH } from "./constants";
 
 /** 3D impulse vector passed to Rapier's applyImpulse. */
 export interface Impulse3D {
@@ -68,12 +68,15 @@ export function updateRacerPos(
   if (worldY < state.track!.seaLevelY || isOffCourse(state.track!, pos)) {
     r.state = "tipped";
     r.skipNextTurn = true;
-    // Snap to the path centerline at the last safe progress so they respawn
-    // in the middle of the course rather than at the edge they fell off.
+    // Don't teleport to centre. Record where (and which side) it tipped off, and
+    // sit the marble visibly on the ridge for the wasted turn. The actual
+    // re-entry happens when the skipped turn is consumed (startNextTurn).
     const safeProgress = progressAlongPath(state.track!, r.lastInBoundsPos);
-    const centerPos = pathPointAt(state.track!, safeProgress);
-    r.pos = centerPos;
-    r.lastInBoundsPos = { ...centerPos };
+    const centre = pathPointAt(state.track!, safeProgress);
+    const side = Math.sign(pos.x - centre.x) || 1;
+    r.ridge = { progress: safeProgress, side };
+    // Park it on the ridge beside the line where it left — no forward progress.
+    r.pos = { x: centre.x + side * (LANE_HALF_WIDTH + 3), y: centre.y };
     r.progress = safeProgress;
     return "offcourse";
   }

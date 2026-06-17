@@ -27,6 +27,7 @@ import {
   MARBLE_DOWNFORCE,
   SLEEP_SPEED,
   SETTLE_FRAMES,
+  SETTLE_PARK_FRAMES,
   MAX_SETTLE_MS,
 } from "@/game/constants";
 
@@ -152,6 +153,13 @@ function ActiveMarble({
 
     if (speed < SLEEP_SPEED) {
       settleCount.current++;
+      // Once it's been slow for a few frames, actively kill the residual creep so
+      // it parks with a thud instead of gliding/recalculating around the rest
+      // threshold (Rapier damping alone never fully converges on uneven sand).
+      if (settleCount.current >= SETTLE_PARK_FRAMES) {
+        rb.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        rb.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
     } else {
       settleCount.current = 0;
     }

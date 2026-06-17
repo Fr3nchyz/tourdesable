@@ -4,9 +4,9 @@
 // ============================================================================
 
 import type { GameState, Racer, Track, BotType } from "./types";
-import { generateTrack, progressAlongPath } from "./track";
+import { generateTrack, progressAlongPath, pathPointAt } from "./track";
 import { mulberry32, randInt, shuffle } from "./rng";
-import { RACER_COLORS, RACER_COUNT, THEMES } from "./constants";
+import { RACER_COLORS, RACER_COUNT, LANE_HALF_WIDTH, THEMES } from "./constants";
 
 const ALL_BOTS: BotType[] = [
   "bully",
@@ -160,6 +160,17 @@ export function startNextTurn(state: GameState): void {
     if (r.state === "finished") continue;
     if (r.skipNextTurn) {
       r.skipNextTurn = false;
+      // Edge-recover: the cyclist picks his bike up and re-enters just inside the
+      // ridge on the side he fell off, at the same forward progress (no center
+      // snap, no knockback).
+      if (r.ridge && state.track) {
+        const c = pathPointAt(state.track, r.ridge.progress);
+        const x = c.x + r.ridge.side * (LANE_HALF_WIDTH - 0.8);
+        r.pos = { x, y: c.y };
+        r.lastInBoundsPos = { ...r.pos };
+        r.progress = r.ridge.progress;
+        r.ridge = undefined;
+      }
       r.state = "stopped";
       continue;
     }

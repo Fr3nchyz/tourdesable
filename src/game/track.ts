@@ -12,6 +12,8 @@ import {
   FINISH_RADIUS,
   SEA_LEVEL_Y,
   RACER_COUNT,
+  LANE_HALF_WIDTH,
+  MARBLE_RADIUS,
   THEME_NAMES,
   type Theme,
 } from "./constants";
@@ -119,16 +121,24 @@ export function generateTrack(seed: number, theme: Theme): Track {
     const baseX = start.x + (finish.x - start.x) * t;
     const macro = Math.sin(t * tp.curveFreq) * maxSwing;
     const noise = randRange(rng, -maxSwing * 0.15, maxSwing * 0.15); // 15% micro-variation
-    const offset = i === 0 || i === PATH_POINTS - 1 ? 0 : macro + noise;
+    // Ease the swing in/out over the first/last 3 points so the channel leaves the
+    // start (and meets the finish) running straight — no violent sideways lurch at
+    // the gun, and the start grid stays inside the channel.
+    const ease = Math.min(1, Math.min(i, PATH_POINTS - 1 - i) / 3);
+    const offset = (macro + noise) * ease;
     path.push({ x: clamp(baseX + offset, -width / 2 + 2, width / 2 - 2), y: z });
   }
 
-  // Start grid across X at the start line.
+  // Start grid across X, centered on the channel at the start line and kept
+  // clear of the ridge so no marble spawns out of bounds.
   const startGrid: Vector2D[] = [];
-  const spread = 3;
+  const startCenter = pathPointAt({ path } as Track, start.y / length).x;
+  const maxOff = LANE_HALF_WIDTH - MARBLE_RADIUS - 0.3; // keep clear of the ridge
+  const spread = Math.min(2.4, maxOff);
   for (let i = 0; i < RACER_COUNT; i++) {
     const frac = (RACER_COUNT as number) === 1 ? 0 : i / (RACER_COUNT - 1) - 0.5;
-    startGrid.push({ x: start.x + frac * 2 * spread, y: start.y });
+    const x = clamp(startCenter + frac * 2 * spread, startCenter - maxOff, startCenter + maxOff);
+    startGrid.push({ x, y: start.y });
   }
 
   const elevation: ElevationField = { theme, seed, ...tp.elevation };
@@ -161,7 +171,13 @@ function scatterRocks(
   const count = randInt(rng, tp.rockCount[0], tp.rockCount[1]);
   for (let i = 0; i < count; i++) {
     const z = randRange(rng, 14, ctx.length - 14);
-    const x = randRange(rng, -ctx.width / 2 + 2, ctx.width / 2 - 2);
+    // Place rocks relative to the racing line, within the channel so they
+    // actually threaten the line — not scattered uselessly across the open beach.
+    // Use the SAME arc-length parametrization as zoneAt/isOffCourse so a rock
+    // genuinely lands in the sand channel, not the berm.
+    const centre = pathPointAt({ path: ctx.path } as Track, z / ctx.length).x;
+    const off = randRange(rng, -(LANE_HALF_WIDTH - 0.5), LANE_HALF_WIDTH - 0.5);
+    const x = clamp(centre + off, -ctx.width / 2 + 2, ctx.width / 2 - 2);
     const pos = { x, y: z };
     // Keep the immediate start/finish clear.
     if (V.dist(pos, ctx.start) < 8 || V.dist(pos, ctx.finish) < 8) continue;
@@ -190,11 +206,14 @@ export function heightAt(track: Track, x: number, z: number): number {
     const dt = z / track.length - peak.t;
     h += peak.h * Math.exp(-(dt * dt) / (2 * peak.sigma * peak.sigma));
   }
-  // Rolling dunes (texture riding on top of the macro profile).
+  // Rolling dunes (gentle, long-wavelength undulation riding on top of the macro
+  // profile). Kept low-amplitude and long-wavelength so they read as soft swells
+  // of sand, NOT moguls the marble ramps off at speed.
   h +=
     e.amp *
-    (Math.sin(x * e.freq + e.seed * 0.013) * 0.5 +
-      Math.sin(z * e.freq * 0.8 + e.seed * 0.021) * 0.5);
+    0.5 *
+    (Math.sin(x * e.freq * 0.5 + e.seed * 0.013) * 0.5 +
+      Math.sin(z * e.freq * 0.4 + e.seed * 0.021) * 0.5);
   // Seaward cliff rising toward the +X edge.
   if (e.cliffAmp > 0) {
     const edge = x / (track.width / 2); // -1..1
@@ -216,7 +235,9 @@ export function heightAt(track: Track, x: number, z: number): number {
     const bt = (absDx - channelHW) / 4;
     h += 0.5 * bt * (1 - bt) * 4; // smooth berm shoulder
   }
-  h += 0.12 * Math.sin(x * 3.1 + z * 2.3 + e.seed * 0.07); // micro-bumps
+  // Fine granular texture: small amplitude, short wavelength — reads as grain the
+  // marble rolls THROUGH, not bumps it launches off.
+  h += 0.035 * Math.sin(x * 6.7 + z * 5.9 + e.seed * 0.07);
   return h;
 }
 
@@ -267,14 +288,22 @@ export function pathPointAt(track: Track, t: number): Vector2D {
 export const atFinish = (track: Track, pos: Vector2D): boolean =>
   V.dist(pos, track.finish) <= track.finishRadius;
 
-/** True if the marble has left the playable beach (sides / ends). */
+/** Lateral distance (m) from the racing line at which a marble has left the
+ * circuit: carved channel (LANE_HALF_WIDTH) + berm shoulder (4) + a 1m lip. */
+export const RIDGE_HALF_WIDTH = LANE_HALF_WIDTH + 5;
+
+/**
+ * True if the marble has left the circuit — past the ends, off the beach, or
+ * (the punishing one) over the ridge beyond the berm shoulder relative to the
+ * racing line. Straying onto the berm is draggy-but-legal; clearing the ridge
+ * costs a turn.
+ */
 export function isOffCourse(track: Track, pos: Vector2D): boolean {
   const m = 1;
-  return (
-    Math.abs(pos.x) > track.width / 2 + m ||
-    pos.y < -m ||
-    pos.y > track.length + m
-  );
+  if (pos.y < -m || pos.y > track.length + m) return true;
+  if (Math.abs(pos.x) > track.width / 2 + m) return true;
+  const centre = pathPointAt(track, clamp(pos.y / track.length, 0, 1));
+  return Math.abs(pos.x - centre.x) > RIDGE_HALF_WIDTH;
 }
 
 function clamp(v: number, lo: number, hi: number): number {

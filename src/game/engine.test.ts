@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { createInitialState, selectTrack, activeRacer, isHumanInput } from "./stateMachine";
+import {
+  createInitialState,
+  selectTrack,
+  activeRacer,
+  isHumanInput,
+  startNextTurn,
+} from "./stateMachine";
 import { applyLaunch, takeBotTurn, updateRacerPos, onSettled } from "./engine";
-import { RACER_COUNT } from "./constants";
+import { pathPointAt, isOffCourse } from "./track";
+import { RACER_COUNT, LANE_HALF_WIDTH } from "./constants";
 import type { GameState } from "./types";
 
 const SEED = 4242;
@@ -107,6 +114,43 @@ describe("updateRacerPos", () => {
     const r = s.racers[0];
     const result = updateRacerPos(s, r.id, track.width, 0, r.pos.y);
     expect(result).toBe("offcourse");
+  });
+});
+
+describe("off-course ridge → edge recovery", () => {
+  it("sits on the ridge (not centre) for the wasted turn", () => {
+    const s = started();
+    const track = s.track!;
+    const r = s.racers[0];
+    // Push it well over the ridge on the +X side at mid-course.
+    const mid = pathPointAt(track, 0.5);
+    updateRacerPos(s, r.id, mid.x + 14, 0, mid.y);
+    expect(r.state).toBe("tipped");
+    expect(r.skipNextTurn).toBe(true);
+    expect(r.ridge).toBeDefined();
+    expect(r.ridge!.side).toBe(1);
+    // Parked beside the line, NOT snapped to centre.
+    expect(Math.abs(r.pos.x - mid.x)).toBeGreaterThan(LANE_HALF_WIDTH);
+  });
+
+  it("re-enters just inside the ridge on the same side, same progress", () => {
+    const s = started();
+    const track = s.track!;
+    const r = s.racers[0];
+    updateRacerPos(s, r.id, pathPointAt(track, 0.5).x + 14, 0, pathPointAt(track, 0.5).y);
+    const savedProgress = r.ridge!.progress;
+
+    // Cycle whole rounds until the skipped turn is consumed.
+    let guard = 0;
+    while (r.skipNextTurn && guard++ < 12) startNextTurn(s);
+
+    expect(r.ridge).toBeUndefined();
+    expect(r.skipNextTurn).toBe(false);
+    expect(r.progress).toBeCloseTo(savedProgress, 5);
+    const c = pathPointAt(track, savedProgress);
+    // Just inside the ridge on the +X side, and legally in bounds.
+    expect(r.pos.x - c.x).toBeCloseTo(LANE_HALF_WIDTH - 0.8, 5);
+    expect(isOffCourse(track, r.pos)).toBe(false);
   });
 });
 

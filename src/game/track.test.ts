@@ -9,7 +9,7 @@ import {
 } from "./track";
 import { createInitialState } from "./stateMachine";
 import * as V from "./vector";
-import { RACER_COUNT, THEMES } from "./constants";
+import { RACER_COUNT, LANE_HALF_WIDTH, THEMES } from "./constants";
 
 describe("track generation", () => {
   it("is deterministic for the same seed + theme", () => {
@@ -140,6 +140,44 @@ describe("atFinish / isOffCourse", () => {
   it("does not flag the centerline as off course", () => {
     for (const p of t.path) {
       expect(isOffCourse(t, p)).toBe(false);
+    }
+  });
+
+  it("flags a marble that clears the ridge beside the line", () => {
+    const c = pathPointAt(t, 0.5);
+    // Just past the ridge (channel + berm + lip) on the +X side.
+    expect(isOffCourse(t, { x: c.x + 11, y: c.y })).toBe(true);
+    // On the berm shoulder is still legal (draggy, not off-course).
+    expect(isOffCourse(t, { x: c.x + 6, y: c.y })).toBe(false);
+  });
+});
+
+describe("spawn grid stays inside the circuit", () => {
+  it("no start position is off course, every theme and several seeds", () => {
+    for (const theme of THEMES) {
+      for (const seed of [1, 7, 42, 555, 99999]) {
+        const t = generateTrack(seed, theme);
+        for (const p of t.startGrid) {
+          expect(isOffCourse(t, p)).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+describe("rocks sit on the racing line", () => {
+  it("every rock is within the channel of the centerline at its z", () => {
+    for (const theme of THEMES) {
+      for (const seed of [1, 7, 42, 555]) {
+        const t = generateTrack(seed, theme);
+        for (const rock of t.rocks) {
+          const c = pathPointAt(t, rock.pos.y / t.length);
+          // Within the carved channel (±LANE_HALF_WIDTH) of the racing line —
+          // they threaten the line instead of littering the open beach. Tiny
+          // epsilon for the width clamp near the beach edges.
+          expect(Math.abs(rock.pos.x - c.x)).toBeLessThanOrEqual(LANE_HALF_WIDTH + 0.01);
+        }
+      }
     }
   });
 });
